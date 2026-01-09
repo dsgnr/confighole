@@ -1,0 +1,15 @@
+services:
+  confighole:
+    build: .
+    container_name: confighole
+    restart: unless-stopped
+    volumes:
+      - /path/to/config_dir:/config:ro # Make sure your local config directory exists
+    environment:
+      - CONFIGHOLE_DAEMON_MODE=true
+      - CONFIGHOLE_CONFIG_PATH=/config/config.yaml
+      - CONFIGHOLE_DAEMON_INTERVAL=${CONFIGHOLE_DAEMON_INTERVAL:-300}  # 5 minutes default
+      - CONFIGHOLE_DRY_RUN=${CONFIGHOLE_DRY_RUN:-false}
+      - CONFIGHOLE_INSTANCE=${CONFIGHOLE_INSTANCE:-}  # Target specific instance or leave empty for all
+      - CONFIGHOLE_VERBOSE=${CONFIGHOLE_VERBOSE:-1}
+      - PIHOLE_PASSWORD=${PIHOLE_PASSWORD:-}
