@@ -265,6 +265,37 @@ $ make type-check  # mypy type checking
 $ make check
 ```
 
+### Testing
+
+ConfigHole includes a comprehensive test suite with both unit and integration tests:
+
+```bash
+# Run all tests
+$ make test
+
+# Run only unit tests (fast, no Pi-hole required)
+$ make test-unit
+
+# Run only integration tests (requires Pi-hole container)
+$ make test-integration
+
+# Run tests with coverage report
+$ make test-coverage
+
+# Start Pi-hole test container
+$ make test-docker
+
+# Stop Pi-hole test container  
+$ make test-docker-down
+
+# Stop and clean up Pi-hole test container (removes volumes)
+$ make test-docker-clean
+```
+
+Integration tests spin up a real Pi-hole container from [pi-hole/docker-pi-hole](https://github.com/pi-hole/docker-pi-hole) to verify functionality. The test suite automatically manages the container lifecycle and waits for Pi-hole to be ready before running tests.
+
+The test suite automatically cleans up the Pi-hole container after tests complete. If tests are interrupted, you can manually clean up with `make test-docker-clean`.
+
 ## Contributing
 
 I'm thrilled that you’re interested in contributing to this project! Here’s how you can get involved:
