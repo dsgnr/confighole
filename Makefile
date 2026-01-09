@@ -12,7 +12,7 @@ install: ## Install dependencies with Poetry
 lint: ## Run linting with Ruff
 	poetry run ruff check .
 
-format: ## Format code with Ruff
+format: ## Format code with Ruff (Black-compatible)
 	poetry run ruff format .
 
 type-check: ## Run type checking with mypy
@@ -21,13 +21,38 @@ type-check: ## Run type checking with mypy
 fix: format ## Fix code formatting and linting issues
 	poetry run ruff check --fix .
 
-check: lint type-check ## Run all checks
+check: fix format lint type-check ## Run all checks
 
 build: ## Build Docker image
 	docker build -t confighole .
 
 run-docker: ## Run with docker-compose (shows help by default)
 	docker-compose run --rm confighole
+
+# Test commands
+test: ## Run all tests
+	poetry run pytest
+
+test-unit: ## Run unit tests only
+	poetry run pytest -m "unit"
+
+test-integration: ## Run integration tests only
+	poetry run pytest -m "integration"
+
+test-verbose: ## Run tests with verbose output
+	poetry run pytest -v
+
+test-coverage: ## Run tests with coverage report
+	poetry run pytest --cov=confighole --cov-report=term
+
+test-docker: ## Start test Pi-hole container
+	docker-compose -f tests/docker-compose.test.yml up -d
+
+test-docker-down: ## Stop test Pi-hole container
+	docker-compose -f tests/docker-compose.test.yml down -v
+
+test-docker-clean: ## Stop and remove test Pi-hole container with volumes
+	docker-compose -f tests/docker-compose.test.yml down -v --remove-orphans
 
 # Development commands
 dev-install: install ## Install with development dependencies

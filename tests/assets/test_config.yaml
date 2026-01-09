@@ -1,0 +1,31 @@
+# ConfigHole test configuration
+global:
+  timeout: 30
+  verify_ssl: false
+  daemon_mode: false
+  daemon_interval: 300
+  verbosity: 1
+  dry_run: false
+
+instances:
+  - name: test-instance
+    base_url: http://localhost:8080
+    password: test-password-123
+    config:
+      dns:
+        upstreams: ["8.8.8.8", "8.8.4.4"]
+        queryLogging: true
+        dnssec: true
+        domain:
+          name: test
+          local: true
+        hosts:
+          - ip: 192.168.1.1
+            host: gateway.test
+          - ip: 192.168.1.10
+            host: nas.test
+        cnameRecords:
+          - name: plex.test
+            target: nas.test
+          - name: grafana.test
+            target: gateway.test

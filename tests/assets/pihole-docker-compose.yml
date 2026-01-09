@@ -1,0 +1,31 @@
+services:
+  pihole:
+    container_name: pihole-test
+    image: pihole/pihole:latest
+    ports:
+      # DNS Ports
+      - "15353:53/tcp"
+      - "15353:53/udp"
+      # Default HTTP Port
+      - "8080:80/tcp"
+      # Default HTTPs Port. FTL will generate a self-signed certificate
+      - "8443:443/tcp"
+    environment:
+      # Set the appropriate timezone for your location
+      TZ: 'UTC'
+      # Set a password to access the web interface
+      FTLCONF_webserver_api_password: 'test-password-123'
+      # If using Docker's default `bridge` network setting the dns listening mode should be set to 'ALL'
+      FTLCONF_dns_listeningMode: 'ALL'
+      # Disable IPv6 for testing simplicity
+      FTLCONF_dns_ipv6: 'false'
+      # Set log level for testing
+      FTLCONF_log_level: 'INFO'
+      # Ensure web interface is enabled
+      FTLCONF_webserver_api_enable: 'true'
+    cap_add:
+      # Required capabilities
+      - NET_ADMIN
+      - SYS_TIME
+      - SYS_NICE
+    restart: unless-stopped
