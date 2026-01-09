@@ -10,7 +10,7 @@ It is built on top of another project of mine, [pihole-lib](https://github.com/d
 
 This project is not affiliated with, endorsed by, or supported by Pi-hole LLC. Pi-hole is a trademark of Pi-hole LLC.
 
-ConfigHole was written for my own homelab to keep Pi-hole configuration under version control and in sync - I use (Flux to manage my Kubernetes clusters). It is a personal tool that escaped into a public repository, and it is built for homelabs rather than production environments.
+ConfigHole was written for my own homelab to keep Pi-hole configuration under version control and in sync (I use Flux to manage my Kubernetes clusters). It is a personal tool that escaped into a public repository, and it is built for homelabs rather than production environments.
 
 It works for me, but it may not work for you. There are no warranties, no guarantees, and no promises that it will not break your DNS at an inconvenient moment. 
 
@@ -28,14 +28,22 @@ Designed and tested against Pi-hole **v6.0 and newer**.
 - Dry-run mode so you can test without touching anything
 - Optional daemon mode for periodic reconciliation
 
+## TODO
+In the order I'd like to get them done:
+- List support (with optional Gravity update)
+- Domain support (regex/exact white/black lists)
+- DHCP config support
+- Groups support
+- Clients management
+
 ## Installation
 
 ### Docker (recommended)
 
 ```bash
-git clone https://github.com/dsgnr/confighole.git
-cd confighole
-docker-compose run --rm confighole --help
+$ git clone https://github.com/dsgnr/confighole.git
+$ cd confighole
+$ docker-compose run --rm confighole --help
 ```
 
 ### Python
@@ -44,15 +52,15 @@ docker-compose run --rm confighole --help
 > Uses Python 3.13. The Python environment uses [Poetry](https://pypi.org/project/poetry/) for package management. This must be installed.
 
 ```bash
-git clone https://github.com/dsgnr/confighole.git
-cd confighole
-poetry install
-poetry run confighole --help
+$ git clone https://github.com/dsgnr/confighole.git
+$ cd confighole
+$ poetry install
+$ poetry run confighole --help
 ```
 
 ## Usage
 
-Create a `config.yaml` - an example can be seen at [examples/config.yaml](examples/config.yaml):
+Create a `config.yaml` - An example can be seen at [examples/config.yaml](examples/config.yaml).
 
 ```yaml
 # Global settings applied to all instances
@@ -87,25 +95,47 @@ instances:
 
 Set your password:
 ```bash
-export PIHOLE_PASSWORD="your-admin-password"
+$ export PIHOLE_PASSWORD="your-admin-password"
+```
+
+or use the `--dump` argument to grab an existing config. You'll need to at least have the instance defined with name, base_url and password in your local config in order to connect:
+
+```bash
+$ docker run --rm \
+  -v $(pwd)/config:/config:ro \
+  confighole -c /config/config.yaml -i homelab --dump
+- name: homelab
+  base_url: http://10.50.1.10
+  config:
+    dns:
+      upstreams:
+      - 127.0.0.1#5053
+      CNAMEdeepInspect: true
+      blockESNI: true
+      EDNS0ECS: true
+      ignoreLocalhost: false
+      hosts:
+      - ip: 10.50.1.1
+         host: rtr0
+[...]
 ```
 
 Run commands:
 ```bash
 # Dump current Pi-hole state
-confighole -c config.yaml --dump
+$ confighole -c config.yaml --dump
 
 # Show what would change
-confighole -c config.yaml --diff
+$ confighole -c config.yaml --diff
 
 # Sync with dry-run
-confighole -c config.yaml --sync --dry-run
+$ confighole -c config.yaml --sync --dry-run
 
 # Apply changes
-confighole -c config.yaml --sync
+$ confighole -c config.yaml --sync
 
 # Run continuously (every 5 minutes by default)
-confighole -c config.yaml --daemon
+$ confighole -c config.yaml --daemon
 ```
 
 ## Daemon Mode
@@ -116,16 +146,16 @@ Daemon mode is useful if you want your Pi-hole instances to drift as little as p
 
 ```bash
 # Default interval (5 minutes)
-confighole -c config.yaml --daemon
+$ confighole -c config.yaml --daemon
 
 # Custom interval
-confighole -c config.yaml --daemon --interval 600
+$ confighole -c config.yaml --daemon --interval 600
 
 # Dry-run daemon (monitor only)
-confighole -c config.yaml --daemon --dry-run
+$ confighole -c config.yaml --daemon --dry-run
 
 # Target a single instance
-confighole -c config.yaml --daemon --instance home --interval 180
+$ confighole -c config.yaml --daemon --instance home --interval 180
 ```
 
 **Configuration Precedence:**
@@ -161,8 +191,8 @@ Apply to all instances unless overridden:
 
 **Daemon mode settings:**
 - `daemon_mode` - Enable daemon mode by default (`true`/`false`)
-- `daemon_interval` - Sync interval in seconds (default: 300)
-- `verbosity` - Log verbosity level (0=WARNING, 1=INFO, 2=DEBUG)
+- `daemon_interval` - Sync interval in seconds (default: `300`)
+- `verbosity` - Log verbosity level (`0`=WARNING, `1`=INFO, `2`=DEBUG)
 - `dry_run` - Enable dry-run mode by default (`true`/`false`)
 
 ### Instance settings
@@ -186,31 +216,31 @@ Per-instance configuration:
 
 ```bash
 # Clone and build
-git clone https://github.com/dsgnr/confighole.git
-cd confighole
+$ git clone https://github.com/dsgnr/confighole.git
+$ cd confighole
 
 # One-time commands
-docker-compose run --rm confighole -c config/config.yaml --diff
-docker-compose run --rm confighole -c config/config.yaml --sync --dry-run
+$ docker-compose run --rm confighole -c config/config.yaml --diff
+$ docker-compose run --rm confighole -c config/config.yaml --sync --dry-run
 
 # Run as daemon
-docker-compose up -d confighole-daemon
+$ docker-compose up -d confighole-daemon
 ```
 
 ### Manual Docker Commands
 
 ```bash
 # Build image
-docker build -t confighole .
+$ docker build -t confighole .
 
 # One-time sync
-docker run --rm \
+$ docker run --rm \
   -v $(pwd)/config:/config:ro \
   -e PIHOLE_PASSWORD="$PIHOLE_PASSWORD" \
   confighole -c config/config.yaml --sync
 
 # Run daemon
-docker run -d --name confighole-daemon \
+$ docker run -d --name confighole-daemon \
   --restart unless-stopped \
   -v $(pwd)/config:/config:ro \
   -e CONFIGHOLE_DAEMON_MODE=true \
@@ -226,15 +256,15 @@ Built with modern Python tooling:
 
 ```bash
 # Setup
-poetry install
+$ poetry install
 
 # Code quality
-make lint        # ruff linting
-make format      # ruff formatting  
-make type-check  # mypy type checking
+$ make lint        # ruff linting
+$ make format      # ruff formatting  
+$ make type-check  # mypy type checking
 
 # All checks
-make check
+$ make check
 ```
 
 ## Contributing
