@@ -6,6 +6,22 @@ ConfigHole is a small tool for managing one or more Pi-hole instances from a sin
 
 It is built on top of another project of mine, [pihole-lib](https://github.com/dsgnr/pihole-lib), a Python library that talks to the Pi-hole API.
 
+## Table of Contents
+
+- [Disclaimer](#disclaimer)
+- [Supported Pi-hole Versions](#supported-pi-hole-versions)
+- [Features](#features)
+- [TODO](#todo)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Daemon Mode](#daemon-mode)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Contributing](#contributing)
+  - [How to Contribute](#how-to-contribute)
+- [Author](#author)
+- [License](#license)
+
 ## Disclaimer
 
 This project is not affiliated with, endorsed by, or supported by Pi-hole LLC. Pi-hole is a trademark of Pi-hole LLC.
@@ -38,12 +54,31 @@ In the order I'd like to get them done:
 
 ## Installation
 
-### Docker (recommended)
+### Docker
+
+> [!NOTE]
+> Example docker-compose file can be found at [examples/docker-compose.yaml](examples/docker-compose.yaml):
+
 
 ```bash
-$ git clone https://github.com/dsgnr/confighole.git
-$ cd confighole
-$ docker-compose run --rm confighole --help
+# Build image
+$ docker build -t confighole .
+
+# One-time sync
+$ docker run --rm \
+  -v $(pwd)/config:/config:ro \
+  -e PIHOLE_PASSWORD="$PIHOLE_PASSWORD" \
+  confighole -c config/config.yaml --sync
+
+# Run daemon
+$ docker run -d --name confighole-daemon \
+  --restart unless-stopped \
+  -v $(pwd)/config:/config:ro \
+  -e CONFIGHOLE_DAEMON_MODE=true \
+  -e CONFIGHOLE_CONFIG_PATH=/config/config.yaml \
+  -e CONFIGHOLE_DAEMON_INTERVAL=300 \
+  -e PIHOLE_PASSWORD="$PIHOLE_PASSWORD" \
+  confighole
 ```
 
 ### Python
@@ -94,7 +129,7 @@ instances:
 ```
 
 > [!TIP]
-> YAML anchors work with the config, so you can define an list of hosts/cnames once, and reference for all instances. For example:
+> YAML anchors work with the config, so you can define a list of hosts/cnames once, and reference them for all instances. For example:
 > ``` yaml
 >  hosts: &hosts
 >   - ip: 192.168.1.1
@@ -160,8 +195,6 @@ $ confighole -c config.yaml --daemon
 
 Daemon mode is useful if you want your Pi-hole instances to drift as little as possible. It periodically compares the live state with your config and applies any differences.
 
-### CLI Daemon Mode
-
 ```bash
 # Default interval (5 minutes)
 $ confighole -c config.yaml --daemon
@@ -224,49 +257,6 @@ Per-instance configuration:
 
 > [!NOTE]
 > Only base Pi-hole config is supported right now. Lists, Groups, DHCP are not yet supported.
-
-## Docker
-
-### Quick Start
-
-> [!NOTE]
-> Example docker-compose file can be found at [examples/docker-compose.yaml](examples/docker-compose.yaml):
-
-```bash
-# Clone and build
-$ git clone https://github.com/dsgnr/confighole.git
-$ cd confighole
-
-# One-time commands
-$ docker-compose run --rm confighole -c config/config.yaml --diff
-$ docker-compose run --rm confighole -c config/config.yaml --sync --dry-run
-
-# Run as daemon
-$ docker-compose up -d confighole-daemon
-```
-
-### Manual Docker Commands
-
-```bash
-# Build image
-$ docker build -t confighole .
-
-# One-time sync
-$ docker run --rm \
-  -v $(pwd)/config:/config:ro \
-  -e PIHOLE_PASSWORD="$PIHOLE_PASSWORD" \
-  confighole -c config/config.yaml --sync
-
-# Run daemon
-$ docker run -d --name confighole-daemon \
-  --restart unless-stopped \
-  -v $(pwd)/config:/config:ro \
-  -e CONFIGHOLE_DAEMON_MODE=true \
-  -e CONFIGHOLE_CONFIG_PATH=/config/config.yaml \
-  -e CONFIGHOLE_DAEMON_INTERVAL=300 \
-  -e PIHOLE_PASSWORD="$PIHOLE_PASSWORD" \
-  confighole
-```
 
 ## Development
 
