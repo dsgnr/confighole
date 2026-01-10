@@ -93,6 +93,24 @@ instances:
             target: nas.lan
 ```
 
+> [!TIP]
+> YAML anchors work with the config, so you can define an list of hosts/cnames once, and reference for all instances. For example:
+> ``` yaml
+>  hosts: &hosts
+>   - ip: 192.168.1.1
+>     host: gateway.lab
+>   - ip: 192.168.1.10
+>     host: nas.lab
+>
+> instances:
+>   - name: home
+>     base_url: http://192.168.1.100
+>     password: "${PIHOLE_PASSWORD}"
+>     config:
+>       dns:
+>         hosts: *hosts
+> ```
+
 Set your password:
 ```bash
 $ export PIHOLE_PASSWORD="your-admin-password"
