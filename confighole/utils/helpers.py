@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from pihole_lib.models import PiHoleList
+
 from confighole.utils.config import resolve_password
 from confighole.utils.exceptions import ConfigurationError
 
@@ -84,8 +86,25 @@ def normalise_cname_records(cnames: list) -> list[dict[str, str]]:
     return normalised
 
 
-def normalise_dns_configuration(config: dict[str, Any]) -> dict[str, Any]:
+def normalise_remote_lists(lists: list[PiHoleList]) -> list[dict[str, str]]:
+    """Normalise remote Pi-hole lists to consistent dictionary format."""
+    return [
+        {
+            "address": list_item.address,
+            "type": list_item.type.value,
+            "comment": list_item.comment,
+            "groups": list_item.groups,
+            "enabled": list_item.enabled,
+        }
+        for list_item in lists
+    ]
+
+
+def normalise_configuration(config: dict[str, Any]) -> dict[str, Any]:
     """Normalise DNS-related configuration keys."""
+    if not config:
+        return {}
+
     dns_config = config.get("dns")
     if not isinstance(dns_config, dict):
         return config

@@ -12,13 +12,14 @@ from confighole.utils.config import (
     merge_global_settings,
     resolve_password,
 )
-from confighole.utils.diff import calculate_config_diff, convert_diff_to_nested_dict
+from confighole.utils.diff import calculate_config_diff
 from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.helpers import (
     cnames_to_pihole_format,
+    convert_diff_to_nested_dict,
     hosts_to_pihole_format,
     normalise_cname_records,
-    normalise_dns_configuration,
+    normalise_configuration,
     normalise_dns_hosts,
     validate_instance_config,
 )
@@ -193,7 +194,7 @@ class TestHelperUtils:
         expected = [{"name": "plex.test", "target": "nas.test"}]
         assert result == expected
 
-    def test_normalise_dns_configuration(self):
+    def test_normalise_configuration(self):
         """Test normalising complete DNS configuration."""
         config = {
             "dns": {
@@ -203,7 +204,7 @@ class TestHelperUtils:
             }
         }
 
-        result = normalise_dns_configuration(config)
+        result = normalise_configuration(config)
 
         assert "dns" in result
         dns = result["dns"]
@@ -424,19 +425,19 @@ class TestHelperUtilsExtended:
         with pytest.raises(ConfigurationError):
             normalise_cname_records(cnames)
 
-    def test_normalise_dns_configuration_no_dns(self):
+    def test_normalise_configuration_no_dns(self):
         """Test normalising configuration without DNS section."""
         config = {"other": "data"}
 
-        result = normalise_dns_configuration(config)
+        result = normalise_configuration(config)
 
         assert result == config
 
-    def test_normalise_dns_configuration_invalid_dns(self):
+    def test_normalise_configuration_invalid_dns(self):
         """Test normalising configuration with invalid DNS section."""
         config = {"dns": "not_a_dict"}
 
-        result = normalise_dns_configuration(config)
+        result = normalise_configuration(config)
 
         assert result == config
 
