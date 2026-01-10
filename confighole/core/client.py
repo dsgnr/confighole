@@ -10,7 +10,10 @@ from confighole.utils.config import (
     validate_instance_config,
 )
 from confighole.utils.exceptions import ConfigurationError
-from confighole.utils.helpers import normalise_dns_configuration
+from confighole.utils.helpers import (
+    normalise_configuration,
+    normalise_remote_lists,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +71,26 @@ class PiHoleManager:
         try:
             logger.debug("Fetching Pi-hole configuration...")
             raw_config = self._client.config.get_config()
-            return normalise_dns_configuration(raw_config)
+            return normalise_configuration(raw_config)
         except Exception as exc:
             logger.error(f"Failed to fetch configuration: {exc}")
+            if "credentials" in str(exc).lower() or "unauthorised" in str(exc).lower():
+                logger.error(
+                    "Authentication failed - check your password configuration"
+                )
+            raise
+
+    def fetch_lists(self) -> list[dict[str, str]]:
+        """Fetch remote Pi-hole lists."""
+        if not self._client:
+            raise RuntimeError("Client not initialised")
+
+        try:
+            logger.debug("Fetching Pi-hole lists...")
+            raw_lists = self._client.lists.get_lists()
+            return normalise_remote_lists(raw_lists)
+        except Exception as exc:
+            logger.error(f"Failed to fetch lists: {exc}")
             if "credentials" in str(exc).lower() or "unauthorised" in str(exc).lower():
                 logger.error(
                     "Authentication failed - check your password configuration"

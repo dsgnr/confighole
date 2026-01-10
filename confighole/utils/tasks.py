@@ -6,11 +6,11 @@ from typing import Any
 import yaml
 
 from confighole.core.client import create_manager
-from confighole.utils.diff import calculate_config_diff
+from confighole.utils.diff import calculate_config_diff, calculate_lists_diff
 from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.helpers import (
     convert_diff_to_nested_dict,
-    normalise_dns_configuration,
+    normalise_configuration,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,7 @@ def dump_instance_data(instance_config: dict[str, Any]) -> dict[str, Any] | None
                 "name": name,
                 "base_url": base_url,
                 "config": manager.fetch_configuration(),
+                "lists": manager.fetch_lists(),
             }
     except Exception as exc:
         logger.error(f"Failed to connect to '{name}': {exc}")
@@ -42,10 +43,13 @@ def dump_instance_data(instance_config: dict[str, Any]) -> dict[str, Any] | None
 def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | None:
     """Compare local configuration against remote Pi-hole instance."""
     name = instance_config.get("name", "unknown")
-    local_config = instance_config.get("config")
+    local_config = instance_config.get("config", {})
+    local_lists = instance_config.get("lists", [])
 
-    if not local_config:
-        logger.warning(f"No local configuration found for instance '{name}'")
+    if not local_config and not local_lists:
+        logger.info(
+            f"No local Pi-hole configuration or lists found for instance '{name}'"
+        )
         return None
 
     manager = create_manager(instance_config)
@@ -56,9 +60,24 @@ def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | No
 
     try:
         with manager:
-            remote_config = manager.fetch_configuration()
-            normalised_local = normalise_dns_configuration(local_config)
-            differences = calculate_config_diff(normalised_local, remote_config)
+            differences = {}
+
+            # Compare configuration if present
+            if local_config:
+                remote_config = manager.fetch_configuration()
+                normalised_local_config = normalise_configuration(local_config)
+                config_diff = calculate_config_diff(
+                    normalised_local_config, remote_config
+                )
+                if config_diff:
+                    differences["config"] = config_diff
+
+            # Compare lists if present
+            if local_lists:
+                remote_lists = manager.fetch_lists()
+                lists_diff = calculate_lists_diff(local_lists, remote_lists)
+                if lists_diff:
+                    differences["lists"] = lists_diff
 
             if not differences:
                 logger.info(f"No differences found for '{name}'")
@@ -94,7 +113,7 @@ def sync_instance_config(
     try:
         with manager:
             remote_config = manager.fetch_configuration()
-            normalised_local = normalise_dns_configuration(local_config)
+            normalised_local = normalise_configuration(local_config)
             changes = calculate_config_diff(normalised_local, remote_config)
 
             if not changes:
