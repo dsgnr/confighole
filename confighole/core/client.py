@@ -63,6 +63,11 @@ class PiHoleManager:
         if self._client:
             self._client.__exit__(exc_type, exc_val, exc_tb)
 
+    def _handle_auth_error(self, exc: Exception) -> None:
+        """Handle authentication-related errors."""
+        if "credentials" in str(exc).lower() or "unauthorised" in str(exc).lower():
+            logger.error("Authentication failed - check your password configuration")
+
     def fetch_configuration(self) -> dict[str, Any]:
         """Fetch and normalise remote Pi-hole configuration."""
         if not self._client:
@@ -74,10 +79,7 @@ class PiHoleManager:
             return normalise_configuration(raw_config)
         except Exception as exc:
             logger.error(f"Failed to fetch configuration: {exc}")
-            if "credentials" in str(exc).lower() or "unauthorised" in str(exc).lower():
-                logger.error(
-                    "Authentication failed - check your password configuration"
-                )
+            self._handle_auth_error(exc)
             raise
 
     def fetch_lists(self) -> list[dict[str, str]]:
@@ -91,10 +93,7 @@ class PiHoleManager:
             return normalise_remote_lists(raw_lists)
         except Exception as exc:
             logger.error(f"Failed to fetch lists: {exc}")
-            if "credentials" in str(exc).lower() or "unauthorised" in str(exc).lower():
-                logger.error(
-                    "Authentication failed - check your password configuration"
-                )
+            self._handle_auth_error(exc)
             raise
 
     def update_configuration(
