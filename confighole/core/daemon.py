@@ -1,10 +1,13 @@
 """Daemon mode for continuous Pi-hole configuration synchronisation."""
 
+from __future__ import annotations
+
 import logging
 import os
 import signal
 import sys
 import time
+from types import FrameType
 from typing import Any
 
 from confighole.utils.config import load_yaml_config, merge_global_settings
@@ -15,7 +18,11 @@ logger = logging.getLogger(__name__)
 
 
 class ConfigHoleDaemon:
-    """Daemon for continuous Pi-hole configuration synchronisation."""
+    """Daemon for continuous Pi-hole configuration synchronisation.
+
+    Runs in a loop, periodically synchronising local configuration
+    to one or more Pi-hole instances.
+    """
 
     def __init__(
         self,
@@ -24,24 +31,38 @@ class ConfigHoleDaemon:
         target_instance: str | None = None,
         dry_run: bool = False,
     ) -> None:
-        """Initialise the daemon."""
+        """Initialise the daemon.
+
+        Args:
+            config_path: Path to the YAML configuration file.
+            interval: Seconds between sync operations.
+            target_instance: Optional instance name to target (None for all).
+            dry_run: If True, only report what would change without applying.
+        """
         self.config_path = config_path
         self.interval = interval
         self.target_instance = target_instance
         self.dry_run = dry_run
         self.running = False
 
-        # Set up signal handlers for graceful shutdown
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
 
-    def _signal_handler(self, signum: int, frame: Any) -> None:
+    def _signal_handler(self, signum: int, frame: FrameType | None) -> None:
         """Handle shutdown signals gracefully."""
-        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        logger.info("Received signal %d, shutting down gracefully...", signum)
         self.running = False
 
     def _load_instances(self) -> list[dict[str, Any]]:
-        """Load and filter instances from configuration."""
+        """Load and filter instances from configuration.
+
+        Returns:
+            List of instance configurations.
+
+        Note:
+            Exits the programme if configuration loading fails or
+            target instance is not found.
+        """
         try:
             config = load_yaml_config(self.config_path)
             all_instances = merge_global_settings(config)
@@ -54,7 +75,7 @@ class ConfigHoleDaemon:
                 ]
                 if not filtered:
                     logger.error(
-                        f"No instance found with name '{self.target_instance}'"
+                        "No instance found with name '%s'", self.target_instance
                     )
                     sys.exit(1)
                 return filtered
@@ -62,7 +83,7 @@ class ConfigHoleDaemon:
             return all_instances
 
         except Exception as exc:
-            logger.error(f"Failed to load configuration: {exc}")
+            logger.error("Failed to load configuration: %s", exc)
             sys.exit(1)
 
     def _sync_instances(self) -> None:
@@ -74,39 +95,41 @@ class ConfigHoleDaemon:
                 logger.warning("No instances found in configuration")
                 return
 
-            logger.info(f"Starting sync for {len(instances)} instance(s)")
+            logger.info("Starting sync for %d instance(s)", len(instances))
             results = process_instances(instances, "sync", dry_run=self.dry_run)
 
             if results:
-                logger.info(f"Sync completed for {len(results)} instance(s)")
+                logger.info("Sync completed for %d instance(s)", len(results))
+                action = "would be applied" if self.dry_run else "applied"
                 for result in results:
                     name = result.get("name", "unknown")
                     changes_count = len(result.get("changes", {}))
-                    action = "would be applied" if self.dry_run else "applied"
-                    logger.info(f"  {name}: {changes_count} changes {action}")
+                    logger.info("  %s: %d changes %s", name, changes_count, action)
             else:
                 logger.info("No changes required for any instance")
 
         except Exception as exc:
-            logger.error(f"Sync failed: {exc}")
+            logger.error("Sync failed: %s", exc)
 
     def run(self) -> None:
         """Run the daemon main loop."""
         logger.info("ConfigHole daemon starting...")
         logger.info(
-            f"Config: {self.config_path}, Interval: {self.interval}s, Target: {self.target_instance or 'all'}, Dry run: {self.dry_run}"
+            "Config: %s, Interval: %ds, Target: %s, Dry run: %s",
+            self.config_path,
+            self.interval,
+            self.target_instance or "all",
+            self.dry_run,
         )
 
         self.running = True
 
-        # Perform initial sync
         logger.info("Performing initial sync...")
         self._sync_instances()
 
-        # Main daemon loop
         while self.running:
             try:
-                logger.debug(f"Sleeping for {self.interval} seconds...")
+                logger.debug("Sleeping for %d seconds...", self.interval)
                 time.sleep(self.interval)
 
                 if self.running:
@@ -115,15 +138,19 @@ class ConfigHoleDaemon:
             except KeyboardInterrupt:
                 logger.info("Received keyboard interrupt, shutting down...")
                 break
+
             except Exception as exc:
-                logger.error(f"Unexpected error in daemon loop: {exc}")
-                continue
+                logger.error("Unexpected error in daemon loop: %s", exc)
 
         logger.info("ConfigHole daemon stopped")
 
 
 def get_daemon_config_from_env() -> dict[str, Any]:
-    """Get daemon configuration from environment variables."""
+    """Get daemon configuration from environment variables.
+
+    Returns:
+        Dictionary containing daemon configuration.
+    """
     return {
         "enabled": os.getenv("CONFIGHOLE_DAEMON_MODE", "false").lower() == "true",
         "interval": int(os.getenv("CONFIGHOLE_DAEMON_INTERVAL", "300")),
@@ -134,7 +161,12 @@ def get_daemon_config_from_env() -> dict[str, Any]:
 
 
 def run_daemon_from_env() -> None:
-    """Run daemon using environment variable configuration."""
+    """Run daemon using environment variable configuration.
+
+    Note:
+        Exits the programme if daemon mode is not enabled or
+        config path is not set.
+    """
     config = get_daemon_config_from_env()
 
     if not config["enabled"]:

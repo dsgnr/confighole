@@ -1,5 +1,7 @@
 """Data normalisation utilities for Pi-hole configurations."""
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 
@@ -12,7 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 def validate_instance_config(instance_config: dict[str, Any]) -> None:
-    """Validate instance configuration for required fields."""
+    """Validate instance configuration for required fields.
+
+    Args:
+        instance_config: Instance configuration dictionary.
+
+    Raises:
+        ConfigurationError: If required fields are missing or invalid.
+    """
     name = instance_config.get("name", "unknown")
 
     if not instance_config.get("base_url"):
@@ -25,69 +34,87 @@ def validate_instance_config(instance_config: dict[str, Any]) -> None:
         )
 
 
-def normalise_dns_hosts(hosts: list) -> list[dict[str, str]]:
+def normalise_dns_hosts(hosts: list[Any]) -> list[dict[str, str]]:
     """Normalise DNS hosts to a consistent list format.
 
-    Pi-hole accepts and returns the hosts as space separated values, ie: '192.168.1.1 rtr0'.
-    But we use a list of dicts in our config to make it easier to maintain. Due to this, we must normalise them.
+    Pi-hole accepts and returns hosts as space-separated values (e.g. '192.168.1.1 rtr0').
+    Local config uses a list of dicts for easier maintenance.
+
+    Args:
+        hosts: List of host entries (dicts or space-separated strings).
+
+    Returns:
+        List of normalised host dictionaries with 'ip' and 'host' keys.
+
+    Raises:
+        ConfigurationError: If host format is invalid.
     """
-    normalised = []
+    normalised: list[dict[str, str]] = []
     required_keys = {"ip", "host"}
+
     for entry in hosts:
-        # The local config is defined as a list of dicts
         if isinstance(entry, dict):
-            # must have both ip and host keys
             if not required_keys.issubset(entry):
                 raise ConfigurationError(
-                    f"A host record must contain both {', and'.join(required_keys)} keys"
+                    f"A host record must contain both {', and '.join(required_keys)} keys"
                 )
             normalised.append(entry)
-            continue
 
-        # Pihole returns the records as space separated values
-        if isinstance(entry, str) and " " in entry:
+        elif isinstance(entry, str) and " " in entry:
             ip, domain = entry.split(" ", 1)
             normalised.append({"ip": ip, "host": domain.strip()})
-            continue
 
-        # If we got this far, probably something went bad
-        raise ConfigurationError("Failed to parse the hosts list")
+        else:
+            raise ConfigurationError("Failed to parse the hosts list")
 
     return normalised
 
 
-def normalise_cname_records(cnames: list) -> list[dict[str, str]]:
+def normalise_cname_records(cnames: list[Any]) -> list[dict[str, str]]:
     """Normalise CNAME records to a consistent list format.
 
-    Pi-hole accepts and returns the hosts as comma separated values, ie: 'router,rtr0'.
-    But we use a list of dicts in our config to make it easier to maintain. Due to this, we must normalise them.
+    Pi-hole accepts and returns CNAMEs as comma-separated values (e.g. 'router,rtr0').
+    Local config uses a list of dicts for easier maintenance.
+
+    Args:
+        cnames: List of CNAME entries (dicts or comma-separated strings).
+
+    Returns:
+        List of normalised CNAME dictionaries with 'name' and 'target' keys.
+
+    Raises:
+        ConfigurationError: If CNAME format is invalid.
     """
-    normalised = []
+    normalised: list[dict[str, str]] = []
     required_keys = {"name", "target"}
+
     for entry in cnames:
-        # The local config is defined as a list of dicts
         if isinstance(entry, dict):
             if not required_keys.issubset(entry):
                 raise ConfigurationError(
-                    f"A cname record must contain both {', and'.join(required_keys)} keys"
+                    f"A cname record must contain both {', and '.join(required_keys)} keys"
                 )
             normalised.append(entry)
-            continue
 
-        # Pihole returns the records as comma separated values
-        if isinstance(entry, str) and "," in entry:
+        elif isinstance(entry, str) and "," in entry:
             name, target = map(str.strip, entry.split(",", 1))
             normalised.append({"name": name, "target": target})
-            continue
 
-        # If we got this far, probably something went bad
-        raise ConfigurationError("Failed to parse the hosts list")
+        else:
+            raise ConfigurationError("Failed to parse the hosts list")
 
     return normalised
 
 
-def normalise_remote_lists(lists: list[PiHoleList]) -> list[dict[str, str]]:
-    """Normalise remote Pi-hole lists to consistent dictionary format."""
+def normalise_remote_lists(lists: list[PiHoleList]) -> list[dict[str, Any]]:
+    """Normalise remote Pi-hole lists to consistent dictionary format.
+
+    Args:
+        lists: List of PiHoleList objects from the Pi-hole API.
+
+    Returns:
+        List of normalised list dictionaries.
+    """
     return [
         {
             "address": list_item.address,
@@ -101,7 +128,16 @@ def normalise_remote_lists(lists: list[PiHoleList]) -> list[dict[str, str]]:
 
 
 def normalise_configuration(config: dict[str, Any]) -> dict[str, Any]:
-    """Normalise DNS-related configuration keys."""
+    """Normalise DNS-related configuration keys.
+
+    Converts hosts and CNAME records to their normalised dictionary format.
+
+    Args:
+        config: Configuration dictionary (may contain 'dns' section).
+
+    Returns:
+        Configuration with normalised DNS entries.
+    """
     if not config:
         return {}
 
@@ -119,12 +155,26 @@ def normalise_configuration(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def hosts_to_pihole_format(hosts: list[dict[str, str]]) -> list[str]:
-    """Convert normalised host dictionaries to Pi-hole string format."""
+    """Convert normalised host dictionaries to Pi-hole string format.
+
+    Args:
+        hosts: List of normalised host dictionaries.
+
+    Returns:
+        List of space-separated host strings for Pi-hole API.
+    """
     return [f"{host['ip']} {host['host']}" for host in hosts]
 
 
 def cnames_to_pihole_format(cnames: list[dict[str, str]]) -> list[str]:
-    """Convert normalised CNAME dictionaries to Pi-hole string format."""
+    """Convert normalised CNAME dictionaries to Pi-hole string format.
+
+    Args:
+        cnames: List of normalised CNAME dictionaries.
+
+    Returns:
+        List of comma-separated CNAME strings for Pi-hole API.
+    """
     return [f"{cname['name']},{cname['target']}" for cname in cnames]
 
 
@@ -132,6 +182,12 @@ def convert_diff_to_nested_dict(diff_dict: dict[str, Any]) -> dict[str, Any]:
     """Convert flat diff dictionary to nested structure for Pi-hole updates.
 
     Converts hosts/cnameRecords back to string format expected by Pi-hole API.
+
+    Args:
+        diff_dict: Flat dictionary with dotted paths as keys.
+
+    Returns:
+        Nested dictionary structure suitable for Pi-hole API updates.
     """
     result: dict[str, Any] = {}
 
@@ -149,19 +205,25 @@ def convert_diff_to_nested_dict(diff_dict: dict[str, Any]) -> dict[str, Any]:
         for key in reversed(path.split(".")):
             nested_dict = {key: nested_dict}
 
-        result = _merge_dictionaries(result, nested_dict)
+        result = _merge_dicts(result, nested_dict)
 
     return result
 
 
-def _merge_dictionaries(
-    dict_a: dict[str, Any], dict_b: dict[str, Any]
-) -> dict[str, Any]:
-    """Recursively merge dictionary b into dictionary a."""
-    for key, value in dict_b.items():
-        if key in dict_a and isinstance(dict_a[key], dict) and isinstance(value, dict):
-            dict_a[key] = _merge_dictionaries(dict_a[key], value)
-        else:
-            dict_a[key] = value
+def _merge_dicts(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge overlay dictionary into base dictionary.
 
-    return dict_a
+    Args:
+        base: Base dictionary to merge into.
+        overlay: Dictionary to merge from.
+
+    Returns:
+        Merged dictionary.
+    """
+    for key, value in overlay.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            base[key] = _merge_dicts(base[key], value)
+        else:
+            base[key] = value
+
+    return base

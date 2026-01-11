@@ -1,5 +1,7 @@
 """Configuration loading and authentication utilities."""
 
+from __future__ import annotations
+
 import logging
 import os
 import sys
@@ -13,7 +15,19 @@ logger = logging.getLogger(__name__)
 
 
 def resolve_password(instance_config: dict[str, Any]) -> str | None:
-    """Resolve Pi-hole password from instance configuration or environment."""
+    """Resolve Pi-hole password from instance configuration or environment.
+
+    Supports three methods of password configuration:
+    1. Environment variable syntax: password: ${VAR_NAME}
+    2. Direct password value: password: "my-secret"
+    3. Environment variable reference: password_env: "VAR_NAME"
+
+    Args:
+        instance_config: Instance configuration dictionary.
+
+    Returns:
+        Resolved password string, or None if not found.
+    """
     password = instance_config.get("password")
 
     # Handle environment variable syntax: ${VAR_NAME}
@@ -38,7 +52,14 @@ def resolve_password(instance_config: dict[str, Any]) -> str | None:
 
 
 def validate_instance_config(instance_config: dict[str, Any]) -> None:
-    """Validate instance configuration for required fields."""
+    """Validate instance configuration for required fields.
+
+    Args:
+        instance_config: Instance configuration dictionary.
+
+    Raises:
+        ConfigurationError: If required fields are missing or invalid.
+    """
     name = instance_config.get("name", "unknown")
 
     if not instance_config.get("base_url"):
@@ -52,7 +73,17 @@ def validate_instance_config(instance_config: dict[str, Any]) -> None:
 
 
 def load_yaml_config(file_path: str) -> dict[str, Any]:
-    """Load and validate a YAML configuration file."""
+    """Load and validate a YAML configuration file.
+
+    Args:
+        file_path: Path to the YAML configuration file.
+
+    Returns:
+        Parsed configuration dictionary.
+
+    Note:
+        Exits the programme with code 1 if loading fails.
+    """
     try:
         with open(file_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
@@ -61,13 +92,25 @@ def load_yaml_config(file_path: str) -> dict[str, Any]:
             raise ValueError("Top-level YAML must be a mapping")
 
         return config
+
     except Exception as exc:
-        logger.error(f"Failed to load config {file_path}: {exc}")
+        logger.error("Failed to load config %s: %s", file_path, exc)
         sys.exit(1)
 
 
 def merge_global_settings(config: dict[str, Any]) -> list[dict[str, Any]]:
-    """Merge global settings into instance configurations."""
+    """Merge global settings into instance configurations.
+
+    Global settings are applied to all instances unless overridden
+    at the instance level. Daemon-specific settings are excluded
+    from instance merging.
+
+    Args:
+        config: Full configuration dictionary with 'global' and 'instances' keys.
+
+    Returns:
+        List of instance configurations with global settings merged in.
+    """
     global_settings = config.get("global", {})
     instances = config.get("instances", [])
 
@@ -89,7 +132,14 @@ def merge_global_settings(config: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def get_global_daemon_settings(config: dict[str, Any]) -> dict[str, Any]:
-    """Extract daemon-specific settings from global configuration."""
+    """Extract daemon-specific settings from global configuration.
+
+    Args:
+        config: Full configuration dictionary.
+
+    Returns:
+        Dictionary containing daemon-specific settings with defaults applied.
+    """
     global_settings = config.get("global", {})
 
     return {

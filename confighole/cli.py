@@ -1,5 +1,7 @@
 """Command-line interface for Pi-hole configuration manager."""
 
+from __future__ import annotations
+
 import argparse
 import logging
 import os
@@ -19,7 +21,11 @@ from confighole.utils.tasks import process_instances
 
 
 def setup_logging(verbosity: int) -> None:
-    """Configure logging based on verbosity level."""
+    """Configure logging based on verbosity level.
+
+    Args:
+        verbosity: 0=WARNING, 1=INFO, 2+=DEBUG
+    """
     levels = [logging.WARNING, logging.INFO, logging.DEBUG]
     level = levels[min(verbosity, len(levels) - 1)]
     logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
@@ -33,26 +39,45 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "-c", "--config", required=True, help="Path to the YAML configuration file"
+        "-c",
+        "--config",
+        required=True,
+        help="Path to the YAML configuration file",
     )
-    parser.add_argument("-i", "--instance", help="Target a specific instance by name")
+    parser.add_argument(
+        "-i",
+        "--instance",
+        help="Target a specific instance by name",
+    )
 
     # Operation modes (mutually exclusive)
     ops = parser.add_mutually_exclusive_group(required=True)
     ops.add_argument(
-        "--dump", action="store_true", help="Fetch and display current configuration"
+        "--dump",
+        action="store_true",
+        help="Fetch and display current configuration",
     )
     ops.add_argument(
-        "--diff", action="store_true", help="Compare local vs remote configuration"
+        "--diff",
+        action="store_true",
+        help="Compare local vs remote configuration",
     )
     ops.add_argument(
-        "--sync", action="store_true", help="Synchronise local configuration to Pi-hole"
+        "--sync",
+        action="store_true",
+        help="Synchronise local configuration to Pi-hole",
     )
-    ops.add_argument("--daemon", action="store_true", help="Run in daemon mode")
+    ops.add_argument(
+        "--daemon",
+        action="store_true",
+        help="Run in daemon mode",
+    )
 
     # Options
     parser.add_argument(
-        "--dry-run", action="store_true", help="Simulate changes without applying"
+        "--dry-run",
+        action="store_true",
+        help="Simulate changes without applying",
     )
     parser.add_argument(
         "--interval",
@@ -61,16 +86,32 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Daemon sync interval in seconds",
     )
     parser.add_argument(
-        "-v", "--verbose", action="count", default=0, help="Increase verbosity"
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase verbosity",
     )
 
     return parser
 
 
 def filter_instances(
-    instances: list[dict[str, Any]], target: str | None = None
+    instances: list[dict[str, Any]],
+    target: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Filter instances by name."""
+    """Filter instances by name.
+
+    Args:
+        instances: List of instance configurations.
+        target: Instance name to filter by (None for all).
+
+    Returns:
+        Filtered list of instances.
+
+    Note:
+        Exits the programme if target is specified but not found.
+    """
     if not target:
         return instances
 
@@ -78,11 +119,16 @@ def filter_instances(
     if not filtered:
         logging.error("No instance found with name %s", target)
         sys.exit(1)
+
     return filtered
 
 
 def validate_arguments(args: argparse.Namespace) -> None:
-    """Validate command-line arguments."""
+    """Validate command-line arguments.
+
+    Note:
+        Exits the programme if validation fails.
+    """
     if args.dry_run and not (args.sync or args.daemon):
         logging.error("--dry-run can only be used with --sync or --daemon")
         sys.exit(1)
@@ -93,7 +139,14 @@ def validate_arguments(args: argparse.Namespace) -> None:
 
 
 def get_operation_mode(args: argparse.Namespace) -> str:
-    """Get operation mode from arguments."""
+    """Get operation mode from arguments.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        Operation name string.
+    """
     for action in ("dump", "diff", "daemon"):
         if getattr(args, action):
             return action
@@ -101,13 +154,24 @@ def get_operation_mode(args: argparse.Namespace) -> str:
 
 
 def resolve_settings(
-    args: argparse.Namespace, global_settings: dict[str, Any]
+    args: argparse.Namespace,
+    global_settings: dict[str, Any],
 ) -> dict[str, Any]:
-    """Resolve final settings from CLI args and global config."""
+    """Resolve final settings from CLI args and global config.
+
+    CLI arguments take precedence over global configuration.
+
+    Args:
+        args: Parsed command-line arguments.
+        global_settings: Global settings from configuration file.
+
+    Returns:
+        Resolved settings dictionary.
+    """
     return {
-        "verbosity": args.verbose
-        if args.verbose > 0
-        else global_settings.get("verbosity", 1),
+        "verbosity": (
+            args.verbose if args.verbose > 0 else global_settings.get("verbosity", 1)
+        ),
         "interval": (
             args.interval
             if args.interval != DEFAULT_DAEMON_INTERVAL
@@ -163,13 +227,19 @@ def main() -> None:
 
     try:
         results = process_instances(
-            target_instances, operation, dry_run=settings["dry_run"]
+            target_instances,
+            operation,
+            dry_run=settings["dry_run"],
         )
 
         if results:
             print(
                 yaml.dump(
-                    results, sort_keys=False, allow_unicode=True, width=120, indent=2
+                    results,
+                    sort_keys=False,
+                    allow_unicode=True,
+                    width=120,
+                    indent=2,
                 )
             )
         else:
@@ -178,6 +248,7 @@ def main() -> None:
     except KeyboardInterrupt:
         logging.info("Operation cancelled by user")
         sys.exit(1)
+
     except Exception as exc:
         logging.error("Unexpected error: %s", exc)
         sys.exit(1)

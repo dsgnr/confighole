@@ -46,7 +46,7 @@ Designed and tested against Pi-hole **v6.0 and newer**.
 
 ## TODO
 In the order I'd like to get them done:
-- List support (with optional Gravity update)
+- Optional Gravity update when lists change
 - Domain support (regex/exact white/black lists)
 - DHCP config support
 - Groups support
@@ -137,6 +137,13 @@ instances:
 >   - ip: 192.168.1.10
 >     host: nas.lab
 >
+> lists: &lists
+>   - address: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+>     type: deny
+>     comment: StevenBlack's Unified Hosts List
+>     groups: [0]
+>     enabled: true
+>
 > instances:
 >   - name: home
 >     base_url: http://192.168.1.100
@@ -144,7 +151,9 @@ instances:
 >     config:
 >       dns:
 >         hosts: *hosts
-> ```
+>
+>     lists: *lists
+``` 
 
 Set your password:
 ```bash
@@ -254,9 +263,10 @@ Per-instance configuration:
 - `base_url` - Pi-hole web interface URL  
 - `password` - Admin password (supports `${ENV_VAR}`)
 - `config` - Pi-hole configuration to manage
+- `lists` - Pi-hole lists to manage.
 
 > [!NOTE]
-> Only base Pi-hole config is supported right now. Lists, Groups, DHCP are not yet supported.
+> Only base Pi-hole config and lists are supported right now. Groups, DHCP are not yet supported.
 
 ## Development
 

@@ -33,3 +33,9 @@ instances:
             target: nas.lab
           - name: grafana.lab
             target: k8s-master.lab
+    lists:
+      - address: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+        type: deny
+        comment: StevenBlack's Unified Hosts List
+        groups: [0]
+        enabled: true

@@ -8,6 +8,7 @@ from confighole.utils.tasks import (
     dump_instance_data,
     process_instances,
     sync_instance_config,
+    sync_list_config,
 )
 
 from .constants import TEST_CONFIG_PATH
@@ -163,6 +164,66 @@ class TestTasksIntegration:
 
         # Modify config to ensure changes
         merged_instances[0]["config"]["dns"]["upstreams"] = ["8.8.8.8", "8.8.4.4"]
+
+        results = process_instances(merged_instances, "sync", dry_run=True)
+
+        assert isinstance(results, list)
+        # Results may be empty if no changes needed
+
+    def test_sync_list_config_dry_run(self, pihole_container):
+        """Test syncing list config in dry-run mode."""
+        config = load_yaml_config(TEST_CONFIG_PATH)
+        merged_instances = merge_global_settings(config)
+        instance_config = merged_instances[0]
+
+        # Add some test lists to create changes
+        instance_config["lists"] = [
+            {
+                "address": "https://example.com/test-list.txt",
+                "type": "allow",
+                "comment": "Test list for sync",
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
+
+        result = sync_list_config(instance_config, dry_run=True)
+
+        if result is not None:  # Only if there are changes to sync
+            assert isinstance(result, dict)
+            assert result["name"] == "test-instance"
+            assert "changes" in result
+
+    def test_sync_list_config_no_lists(self, pihole_container):
+        """Test syncing when no local lists are configured."""
+        config = load_yaml_config(TEST_CONFIG_PATH)
+        merged_instances = merge_global_settings(config)
+        instance_config = merged_instances[0]
+
+        # Remove lists from config
+        if "lists" in instance_config:
+            del instance_config["lists"]
+
+        result = sync_list_config(instance_config, dry_run=True)
+
+        # Should return None when no lists are configured
+        assert result is None
+
+    def test_process_instances_sync_lists(self, pihole_container):
+        """Test processing instances with sync_lists operation."""
+        config = load_yaml_config(TEST_CONFIG_PATH)
+        merged_instances = merge_global_settings(config)
+
+        # Add test lists
+        merged_instances[0]["lists"] = [
+            {
+                "address": "https://example.com/test-list.txt",
+                "type": "allow",
+                "comment": "Test list",
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
 
         results = process_instances(merged_instances, "sync", dry_run=True)
 

@@ -2,7 +2,7 @@
 
 import os
 import tempfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,7 +12,7 @@ from confighole.utils.config import (
     merge_global_settings,
     resolve_password,
 )
-from confighole.utils.diff import calculate_config_diff
+from confighole.utils.diff import calculate_config_diff, calculate_lists_diff
 from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.helpers import (
     cnames_to_pihole_format,
@@ -148,6 +148,190 @@ class TestDiffUtils:
         assert "dns" in result
         assert result["dns"]["upstreams"] == ["1.1.1.1"]
         assert result["dns"]["queryLogging"] is True
+
+    def test_calculate_lists_diff_no_changes(self):
+        """Test lists diff calculation with no changes."""
+        local_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "deny",
+                "comment": "Test list 1",
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
+        remote_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "deny",
+                "comment": "Test list 1",
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
+
+        result = calculate_lists_diff(local_lists, remote_lists)
+
+        assert result == {}
+
+    def test_calculate_lists_diff_add_remove(self):
+        """Test lists diff calculation with additions and removals."""
+        local_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "deny",
+                "comment": "Test list 1",
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
+        remote_lists = [
+            {
+                "address": "https://example.com/list2.txt",
+                "type": "allow",
+                "comment": "Test list 2",
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
+
+        result = calculate_lists_diff(local_lists, remote_lists)
+
+        assert "add" in result
+        assert "remove" in result
+        assert len(result["add"]["local"]) == 1
+        assert len(result["remove"]["remote"]) == 1
+        assert result["add"]["local"][0]["address"] == "https://example.com/list1.txt"
+        assert (
+            result["remove"]["remote"][0]["address"] == "https://example.com/list2.txt"
+        )
+
+    def test_calculate_lists_diff_field_changes(self):
+        """Test lists diff calculation with individual field changes."""
+        local_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "deny",
+                "comment": "Updated comment",
+                "groups": [0, 1],
+                "enabled": False,
+            }
+        ]
+        remote_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "allow",  # Different type
+                "comment": "Original comment",  # Different comment
+                "groups": [0],  # Different groups
+                "enabled": True,  # Different enabled state
+            }
+        ]
+
+        result = calculate_lists_diff(local_lists, remote_lists)
+
+        assert "change" in result
+        assert len(result["change"]["local"]) == 1
+        assert len(result["change"]["remote"]) == 1
+        assert result["change"]["local"][0]["type"] == "deny"
+        assert result["change"]["remote"][0]["type"] == "allow"
+
+    def test_calculate_lists_diff_comment_only_change(self):
+        """Test lists diff calculation with only comment changes."""
+        local_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "deny",
+                "comment": "New comment",
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
+        remote_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "deny",
+                "comment": "Old comment",
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
+
+        result = calculate_lists_diff(local_lists, remote_lists)
+
+        assert "change" in result
+        assert len(result["change"]["local"]) == 1
+
+    def test_calculate_lists_diff_groups_normalisation(self):
+        """Test lists diff calculation with groups normalisation."""
+        local_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "deny",
+                "comment": "Test",
+                "groups": [0, 1],  # List format
+                "enabled": True,
+            }
+        ]
+        remote_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "deny",
+                "comment": "Test",
+                "groups": [1, 0],  # Same groups, different order
+                "enabled": True,
+            }
+        ]
+
+        result = calculate_lists_diff(local_lists, remote_lists)
+
+        # Should not detect changes since groups are the same (just different order)
+        assert result == {}
+
+    def test_calculate_lists_diff_enabled_normalisation(self):
+        """Test lists diff calculation with enabled field normalisation."""
+        local_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "deny",
+                "comment": "Test",
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
+        remote_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "deny",
+                "comment": "Test",
+                "groups": [0],
+                "enabled": 1,  # Truthy value
+            }
+        ]
+
+        result = calculate_lists_diff(local_lists, remote_lists)
+
+        # Should not detect changes since both are truthy
+        assert result == {}
+
+    def test_calculate_lists_diff_empty_remote(self):
+        """Test lists diff calculation with empty remote lists."""
+        local_lists = [
+            {
+                "address": "https://example.com/list1.txt",
+                "type": "deny",
+                "comment": "Test",
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
+        remote_lists = []
+
+        result = calculate_lists_diff(local_lists, remote_lists)
+
+        assert "add" in result
+        assert len(result["add"]["local"]) == 1
+        assert "remove" not in result
+        assert "change" not in result
 
 
 @pytest.mark.unit
@@ -527,6 +711,50 @@ class TestTasksUtils:
         result = sync_instance_config(instance_config)
 
         assert result is None
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_list_config_no_local_lists(self, mock_create_manager):
+        """Test syncing when no local lists are present."""
+        from confighole.utils.tasks import sync_list_config
+
+        instance_config = {"name": "test", "base_url": "http://test"}
+
+        result = sync_list_config(instance_config)
+
+        assert result is None
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_list_config_with_lists(self, mock_create_manager):
+        """Test syncing with local lists configured."""
+        from confighole.utils.tasks import sync_list_config
+
+        # Mock the manager and its methods
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_lists.return_value = []
+        mock_manager.update_lists.return_value = True
+        mock_create_manager.return_value = mock_manager
+
+        instance_config = {
+            "name": "test",
+            "base_url": "http://test",
+            "lists": [
+                {
+                    "address": "https://example.com/test.txt",
+                    "type": "allow",
+                    "comment": "Test list",
+                    "groups": [0],
+                    "enabled": True,
+                }
+            ],
+        }
+
+        result = sync_list_config(instance_config, dry_run=False)
+
+        assert result is not None
+        assert result["name"] == "test"
+        assert "changes" in result
+        mock_manager.update_lists.assert_called_once()
 
 
 @pytest.mark.unit
