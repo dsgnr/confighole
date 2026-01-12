@@ -59,16 +59,12 @@ In the order I'd like to get them done:
 > [!NOTE]
 > Example docker-compose file can be found at [examples/docker-compose.yaml](examples/docker-compose.yaml):
 
-
 ```bash
-# Build image
-$ docker build -t confighole .
-
 # One-time sync
 $ docker run --rm \
   -v $(pwd)/config:/config:ro \
   -e PIHOLE_PASSWORD="$PIHOLE_PASSWORD" \
-  confighole -c config/config.yaml --sync
+  ghcr.io/dsgnr/confighole:latest -c config/config.yaml --sync
 
 # Run daemon
 $ docker run -d --name confighole-daemon \
@@ -78,7 +74,7 @@ $ docker run -d --name confighole-daemon \
   -e CONFIGHOLE_CONFIG_PATH=/config/config.yaml \
   -e CONFIGHOLE_DAEMON_INTERVAL=300 \
   -e PIHOLE_PASSWORD="$PIHOLE_PASSWORD" \
-  confighole
+  ghcr.io/dsgnr/confighole:latest
 ```
 
 ### Python
@@ -165,7 +161,7 @@ or use the `--dump` argument to grab an existing config. You'll need to at least
 ```bash
 $ docker run --rm \
   -v $(pwd)/config:/config:ro \
-  confighole -c /config/config.yaml -i homelab --dump
+  ghcr.io/dsgnr/confighole:latest -c /config/config.yaml -i homelab --dump
 - name: homelab
   base_url: http://10.50.1.10
   config:

@@ -1,7 +1,6 @@
 services:
   confighole:
-    build: .
-    container_name: confighole
+    image: ghcr.io/dsgnr/confighole:latest
     restart: unless-stopped
     volumes:
       - /path/to/config_dir:/config:ro # Make sure your local config directory exists
