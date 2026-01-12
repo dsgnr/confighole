@@ -161,6 +161,29 @@ def calculate_groups_diff(
     )
 
 
+def calculate_clients_diff(
+    local_clients: list[dict[str, Any]],
+    remote_clients: list[dict[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    """Calculate differences between local and remote Pi-hole clients.
+
+    Compares clients by client identifier.
+
+    Args:
+        local_clients: Client configurations from local YAML.
+        remote_clients: Client configurations from remote Pi-hole instance.
+
+    Returns:
+        Dictionary with 'add', 'change', and 'remove' keys.
+    """
+    return _calculate_items_diff(
+        local_clients,
+        remote_clients,
+        key_func=lambda item: item["client"],
+        compare_fields=["comment", "groups"],
+    )
+
+
 def calculate_config_diff(
     local_config: Any,
     remote_config: Any,

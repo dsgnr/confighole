@@ -107,6 +107,20 @@ class TestPiHoleManagerOperations:
         with pytest.raises(RuntimeError, match="Client not initialised"):
             manager.update_groups({"add": {}})
 
+    def test_fetch_clients_not_initialised_raises(self):
+        """fetch_clients raises when not initialised."""
+        manager = PiHoleManager("http://test", "password")
+
+        with pytest.raises(RuntimeError, match="Client not initialised"):
+            manager.fetch_clients()
+
+    def test_update_clients_not_initialised_raises(self):
+        """update_clients raises when not initialised."""
+        manager = PiHoleManager("http://test", "password")
+
+        with pytest.raises(RuntimeError, match="Client not initialised"):
+            manager.update_clients({"add": {}})
+
     def test_update_config_empty_changes_returns_true(self):
         """Empty changes returns True without calling API."""
         manager = PiHoleManager("http://test", "password")
@@ -141,6 +155,15 @@ class TestPiHoleManagerOperations:
         manager._client = Mock()
 
         result = manager.update_groups({})
+
+        assert result is True
+
+    def test_update_clients_empty_changes_returns_true(self):
+        """Empty client changes returns True without calling API."""
+        manager = PiHoleManager("http://test", "password")
+        manager._client = Mock()
+
+        result = manager.update_clients({})
 
         assert result is True
 
@@ -578,5 +601,101 @@ class TestGroupOperations:
         }
 
         result = manager.update_groups(changes)
+
+        assert result is False
+
+
+@pytest.mark.unit
+class TestClientOperations:
+    """Tests for client update operations."""
+
+    def test_apply_client_additions(self):
+        """Client additions are applied correctly."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        manager._client = mock_client
+
+        changes = {
+            "add": {
+                "local": [
+                    {
+                        "client": "192.168.1.50",
+                        "comment": "Test",
+                        "groups": [0],
+                    }
+                ]
+            }
+        }
+
+        manager._apply_client_additions(mock_client, changes)
+
+        mock_client.clients.add_client.assert_called_once()
+
+    def test_apply_client_removals(self):
+        """Client removals are applied correctly."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        manager._client = mock_client
+
+        changes = {
+            "remove": {
+                "remote": [
+                    {
+                        "client": "192.168.1.50",
+                    }
+                ]
+            }
+        }
+
+        manager._apply_client_removals(mock_client, changes)
+
+        mock_client.clients.batch_delete_clients.assert_called_once()
+
+    def test_apply_client_changes(self):
+        """Client changes update the client."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        manager._client = mock_client
+
+        changes = {
+            "change": {
+                "local": [
+                    {
+                        "client": "192.168.1.50",
+                        "comment": "Updated",
+                        "groups": [0, 1],
+                    }
+                ],
+                "remote": [
+                    {
+                        "client": "192.168.1.50",
+                        "comment": "Original",
+                    }
+                ],
+            }
+        }
+
+        manager._apply_client_changes(mock_client, changes)
+
+        mock_client.clients.update_client.assert_called_once()
+
+    def test_update_clients_failure_returns_false(self):
+        """API failure returns False."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        mock_client.clients.add_client.side_effect = Exception("API Error")
+        manager._client = mock_client
+
+        changes = {
+            "add": {
+                "local": [
+                    {
+                        "client": "192.168.1.50",
+                    }
+                ]
+            }
+        }
+
+        result = manager.update_clients(changes)
 
         assert result is False

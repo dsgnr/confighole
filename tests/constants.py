@@ -68,3 +68,10 @@ SAMPLE_GROUP = {
     "comment": "Test group",
     "enabled": True,
 }
+
+# Sample client configuration for tests
+SAMPLE_CLIENT = {
+    "client": "192.168.1.50",
+    "comment": "Test client",
+    "groups": [0],
+}

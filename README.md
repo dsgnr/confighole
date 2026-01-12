@@ -42,6 +42,7 @@ Designed and tested against Pi-hole **v6.0 and newer**.
 - Manage blocklists and allowlists
 - Manage domains (exact and regex, allow and deny)
 - Manage groups
+- Manage clients
 - See exactly what will change before applying it
 - Dry-run mode so you can test without touching anything
 - Optional daemon mode for periodic reconciliation
@@ -50,7 +51,6 @@ Designed and tested against Pi-hole **v6.0 and newer**.
 In the order I'd like to get them done:
 - Optional Gravity update when lists change
 - DHCP config support
-- Clients management
 
 ## Installation
 
@@ -277,6 +277,7 @@ Per-instance configuration:
 - `lists` - Pi-hole lists to manage
 - `domains` - Pi-hole domains to manage (exact/regex, allow/deny)
 - `groups` - Pi-hole groups to manage
+- `clients` - Pi-hole clients to manage
 
 ### Domain configuration
 
@@ -315,8 +316,25 @@ groups:
     enabled: true
 ```
 
+### Client configuration
+
+Clients can be identified by IP address, MAC address, hostname, subnet (CIDR), or interface:
+
+```yaml
+clients:
+  - client: "192.168.1.50"
+    comment: "John's laptop"
+    groups: [0, 1]
+  - client: "12:34:56:78:9A:BC"
+    comment: "Smart TV"
+    groups: [0]
+  - client: "192.168.2.0/24"
+    comment: "Guest network"
+    groups: [2]
+```
+
 > [!NOTE]
-> Only base Pi-hole config, lists, domains, and groups are supported right now. DHCP and clients are not yet supported.
+> Only base Pi-hole config, lists, domains, groups, and clients are supported right now. DHCP is not yet supported.
 
 ## Development
 

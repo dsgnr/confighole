@@ -9,6 +9,7 @@ import yaml
 
 from confighole.core.client import create_manager
 from confighole.utils.diff import (
+    calculate_clients_diff,
     calculate_config_diff,
     calculate_domains_diff,
     calculate_groups_diff,
@@ -51,6 +52,7 @@ def dump_instance_data(instance_config: dict[str, Any]) -> dict[str, Any] | None
                 "lists": manager.fetch_lists(),
                 "domains": manager.fetch_domains(),
                 "groups": manager.fetch_groups(),
+                "clients": manager.fetch_clients(),
             }
     except Exception as exc:
         logger.error("Failed to connect to for '%s': %s", name, exc)
@@ -72,9 +74,12 @@ def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | No
     local_lists = instance_config.get("lists")
     local_domains = instance_config.get("domains")
     local_groups = instance_config.get("groups")
+    local_clients = instance_config.get("clients")
 
     # Check if any local configuration exists
-    has_local_config = any([local_config, local_lists, local_domains, local_groups])
+    has_local_config = any(
+        [local_config, local_lists, local_domains, local_groups, local_clients]
+    )
     if not has_local_config:
         logger.info("No local configuration found for instance '%s'", name)
         return None
@@ -115,6 +120,12 @@ def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | No
                 groups_diff = calculate_groups_diff(local_groups, remote_groups)
                 if groups_diff:
                     differences["groups"] = groups_diff
+
+            if local_clients is not None:
+                remote_clients = manager.fetch_clients()
+                clients_diff = calculate_clients_diff(local_clients, remote_clients)
+                if clients_diff:
+                    differences["clients"] = clients_diff
 
             if not differences:
                 logger.info("No differences found for '%s'", name)
@@ -353,12 +364,67 @@ def sync_group_config(
         return None
 
 
+def sync_client_config(
+    instance_config: dict[str, Any],
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any] | None:
+    """Synchronise local clients configuration to Pi-hole instance.
+
+    Args:
+        instance_config: Instance configuration dictionary.
+        dry_run: If True, only report what would change without applying.
+
+    Returns:
+        Dictionary containing applied changes, or None if no changes needed.
+    """
+    name = instance_config.get("name", "unknown")
+    base_url = instance_config.get("base_url")
+    local_clients = instance_config.get("clients")
+
+    if not local_clients:
+        logger.info("No local clients found for instance '%s'", name)
+        return None
+
+    manager = create_manager(instance_config)
+    if not manager:
+        return None
+
+    logger.info("Synchronising clients for '%s' (%s)", name, base_url)
+
+    try:
+        with manager:
+            remote_clients = manager.fetch_clients()
+            changes = calculate_clients_diff(local_clients, remote_clients)
+
+            if not changes:
+                logger.info("No client changes required for '%s'", name)
+                return None
+
+            if dry_run:
+                logger.info("Would apply client changes for '%s':", name)
+                print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
+            else:
+                if not manager.update_clients(changes, dry_run=False):
+                    return None
+
+            return {
+                "name": name,
+                "base_url": base_url,
+                "changes": changes,
+            }
+
+    except Exception as exc:
+        logger.error("Failed to synchronise clients for '%s': %s", name, exc)
+        return None
+
+
 def sync(
     instance_config: dict[str, Any],
     *,
     dry_run: bool = False,
 ) -> dict[str, Any] | None:
-    """Synchronise configuration, lists, domains, and groups to Pi-hole instance.
+    """Synchronise all configuration to Pi-hole instance.
 
     Args:
         instance_config: Instance configuration dictionary.
@@ -385,6 +451,10 @@ def sync(
     groups_result = sync_group_config(instance_config, dry_run=dry_run)
     if groups_result:
         results["groups"] = groups_result.get("changes", {})
+
+    clients_result = sync_client_config(instance_config, dry_run=dry_run)
+    if clients_result:
+        results["clients"] = clients_result.get("changes", {})
 
     if results:
         return {

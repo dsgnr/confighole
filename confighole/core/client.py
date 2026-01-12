@@ -9,6 +9,7 @@ from typing import Any
 from pihole_lib import PiHoleClient
 from pihole_lib.models import (
     BatchDeleteItem,
+    ClientBatchDeleteItem,
     DomainBatchDeleteItem,
     DomainKind,
     DomainType,
@@ -19,6 +20,7 @@ from confighole.utils.config import resolve_password, validate_instance_config
 from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.helpers import (
     normalise_configuration,
+    normalise_remote_clients,
     normalise_remote_domains,
     normalise_remote_groups,
     normalise_remote_lists,
@@ -194,6 +196,27 @@ class PiHoleManager:
 
         except Exception as exc:
             logger.error("Failed to fetch groups: %s", exc)
+            self._handle_auth_error(exc)
+            raise
+
+    def fetch_clients(self) -> list[dict[str, Any]]:
+        """Fetch remote Pi-hole clients.
+
+        Returns:
+            List of normalised client dictionaries.
+
+        Raises:
+            RuntimeError: If client is not initialised.
+        """
+        client = self._ensure_client()
+
+        try:
+            logger.debug("Fetching Pi-hole clients...")
+            raw_clients = client.clients.get_clients()
+            return normalise_remote_clients(raw_clients)
+
+        except Exception as exc:
+            logger.error("Failed to fetch clients: %s", exc)
             self._handle_auth_error(exc)
             raise
 
@@ -558,6 +581,100 @@ class PiHoleManager:
         for group_item in groups_changes["remove"]["remote"]:
             client.groups.delete_group(group_item["name"])
             logger.debug("Removed group: %s", group_item["name"])
+
+    def update_clients(
+        self,
+        clients_changes: dict[str, dict[str, Any]],
+        *,
+        dry_run: bool = False,
+    ) -> bool:
+        """Apply client changes to Pi-hole instance.
+
+        Args:
+            clients_changes: Dictionary with 'add', 'change', and 'remove' keys.
+            dry_run: If True, only log what would change without applying.
+
+        Returns:
+            True if successful, False on failure.
+
+        Raises:
+            RuntimeError: If client is not initialised.
+        """
+        client = self._ensure_client()
+
+        if not clients_changes:
+            logger.info("No client changes to apply")
+            return True
+
+        try:
+            if dry_run:
+                logger.info(
+                    "Would apply client changes: %s", list(clients_changes.keys())
+                )
+                return True
+
+            self._apply_client_additions(client, clients_changes)
+            self._apply_client_changes(client, clients_changes)
+            self._apply_client_removals(client, clients_changes)
+
+            logger.info("Successfully applied client changes")
+            return True
+
+        except Exception as exc:
+            logger.error("Failed to update clients: %s", exc)
+            return False
+
+    def _apply_client_additions(
+        self,
+        client: PiHoleClient,
+        clients_changes: dict[str, dict[str, Any]],
+    ) -> None:
+        """Apply client additions."""
+        if "add" not in clients_changes:
+            return
+
+        for client_item in clients_changes["add"]["local"]:
+            client.clients.add_client(
+                client=client_item["client"],
+                comment=client_item.get("comment"),
+                groups=client_item.get("groups", [0]),
+            )
+            logger.debug("Added client: %s", client_item["client"])
+
+    def _apply_client_changes(
+        self,
+        client: PiHoleClient,
+        clients_changes: dict[str, dict[str, Any]],
+    ) -> None:
+        """Apply client changes."""
+        if "change" not in clients_changes:
+            return
+
+        for client_item in clients_changes["change"]["local"]:
+            client.clients.update_client(
+                client=client_item["client"],
+                comment=client_item.get("comment"),
+                groups=client_item.get("groups", [0]),
+            )
+            logger.debug("Updated client: %s", client_item["client"])
+
+    def _apply_client_removals(
+        self,
+        client: PiHoleClient,
+        clients_changes: dict[str, dict[str, Any]],
+    ) -> None:
+        """Apply client removals."""
+        if "remove" not in clients_changes:
+            return
+
+        items_to_remove = [
+            ClientBatchDeleteItem(item=item["client"])
+            for item in clients_changes["remove"]["remote"]
+        ]
+
+        if items_to_remove:
+            client.clients.batch_delete_clients(items_to_remove)
+            logger.debug("Removed clients: %s", [item.item for item in items_to_remove])
 
 
 def create_manager(instance_config: dict[str, Any]) -> PiHoleManager | None:

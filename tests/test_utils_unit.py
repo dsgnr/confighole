@@ -15,6 +15,7 @@ from confighole.utils.config import (
     resolve_password,
 )
 from confighole.utils.diff import (
+    calculate_clients_diff,
     calculate_config_diff,
     calculate_domains_diff,
     calculate_groups_diff,
@@ -32,6 +33,7 @@ from confighole.utils.helpers import (
     validate_instance_config,
 )
 from tests.constants import (
+    SAMPLE_CLIENT,
     SAMPLE_DNS_CNAMES,
     SAMPLE_DNS_HOSTS,
     SAMPLE_DNS_UPSTREAMS,
@@ -979,5 +981,118 @@ class TestSyncGroupConfig:
         }
 
         result = sync_group_config(config, dry_run=False)
+
+        assert result is None
+
+
+@pytest.mark.unit
+class TestClientsDiff:
+    """Tests for Pi-hole clients diff calculation."""
+
+    def test_identical_clients_no_diff(self):
+        """Identical clients produce empty diff."""
+        clients = [SAMPLE_CLIENT]
+        assert calculate_clients_diff(clients, clients) == {}
+
+    def test_addition_detected(self):
+        """New client in local is detected as addition."""
+        local = [SAMPLE_CLIENT]
+        remote: list[dict] = []
+
+        result = calculate_clients_diff(local, remote)
+
+        assert "add" in result
+        assert len(result["add"]["local"]) == 1
+        assert "remove" not in result
+
+    def test_removal_detected(self):
+        """Client only in remote is detected as removal."""
+        local: list[dict] = []
+        remote = [SAMPLE_CLIENT]
+
+        result = calculate_clients_diff(local, remote)
+
+        assert "remove" in result
+        assert len(result["remove"]["remote"]) == 1
+        assert "add" not in result
+
+    def test_change_detected(self):
+        """Changed client properties are detected."""
+        local = [{**SAMPLE_CLIENT, "comment": "Updated"}]
+        remote = [SAMPLE_CLIENT]
+
+        result = calculate_clients_diff(local, remote)
+
+        assert "change" in result
+        assert len(result["change"]["local"]) == 1
+
+    def test_groups_order_ignored(self):
+        """Group order doesn't affect comparison."""
+        local = [{**SAMPLE_CLIENT, "groups": [0, 1]}]
+        remote = [{**SAMPLE_CLIENT, "groups": [1, 0]}]
+
+        assert calculate_clients_diff(local, remote) == {}
+
+    def test_none_remote_handled(self):
+        """None remote clients handled as empty."""
+        local = [SAMPLE_CLIENT]
+
+        result = calculate_clients_diff(local, None)
+
+        assert "add" in result
+
+
+@pytest.mark.unit
+class TestSyncClientConfig:
+    """Tests for sync_client_config function."""
+
+    def test_sync_clients_returns_none_without_local_clients(self):
+        """sync_client_config returns None without local clients."""
+        from confighole.utils.tasks import sync_client_config
+
+        result = sync_client_config({"name": "test", "base_url": "http://test"})
+
+        assert result is None
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_clients_calls_update(self, mock_create_manager):
+        """sync_client_config calls update_clients on manager."""
+        from confighole.utils.tasks import sync_client_config
+
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_clients.return_value = []
+        mock_manager.update_clients.return_value = True
+        mock_create_manager.return_value = mock_manager
+
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "clients": [SAMPLE_CLIENT],
+        }
+
+        result = sync_client_config(config, dry_run=False)
+
+        assert result is not None
+        assert result["name"] == "test"
+        mock_manager.update_clients.assert_called_once()
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_clients_no_changes_returns_none(self, mock_create_manager):
+        """sync_client_config returns None when no changes needed."""
+        from confighole.utils.tasks import sync_client_config
+
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_clients.return_value = [SAMPLE_CLIENT]
+        mock_create_manager.return_value = mock_manager
+
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "clients": [SAMPLE_CLIENT],
+        }
+
+        result = sync_client_config(config, dry_run=False)
 
         assert result is None
