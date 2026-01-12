@@ -50,7 +50,6 @@ Designed and tested against Pi-hole **v6.0 and newer**.
 ## TODO
 In the order I'd like to get them done:
 - Optional Gravity update when lists change
-- DHCP config support
 
 ## Installation
 
@@ -332,9 +331,6 @@ clients:
     comment: "Guest network"
     groups: [2]
 ```
-
-> [!NOTE]
-> Only base Pi-hole config, lists, domains, groups, and clients are supported right now. DHCP is not yet supported.
 
 ## Development
 
