@@ -46,13 +46,13 @@ test-coverage: ## Run tests with coverage report
 	poetry run pytest --cov=confighole --cov-report=term
 
 test-docker: ## Start test Pi-hole container
-	docker-compose -f tests/docker-compose.test.yml up -d
+	docker-compose -f tests/assets/pihole-docker-compose.yml up -d
 
 test-docker-down: ## Stop test Pi-hole container
-	docker-compose -f tests/docker-compose.test.yml down -v
+	docker-compose -f tests/assets/pihole-docker-compose.yml down -v
 
 test-docker-clean: ## Stop and remove test Pi-hole container with volumes
-	docker-compose -f tests/docker-compose.test.yml down -v --remove-orphans
+	docker-compose -f tests/assets/pihole-docker-compose.yml down -v --remove-orphans
 
 # Development commands
 dev-install: install ## Install with development dependencies
