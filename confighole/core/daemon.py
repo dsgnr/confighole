@@ -129,7 +129,7 @@ class ConfigHoleDaemon:
 
         while self.running:
             try:
-                logger.debug("Sleeping for %d seconds...", self.interval)
+                logger.info("Sleeping for %d seconds...", self.interval)
                 time.sleep(self.interval)
 
                 if self.running:

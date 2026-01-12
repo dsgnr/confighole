@@ -193,7 +193,7 @@ def sync_list_config(
     if not manager:
         return None
 
-    logger.info("Synchronising lists for %s (%s)", name, base_url)
+    logger.info("Synchronising lists for '%s' (%s)", name, base_url)
 
     try:
         with manager:
@@ -254,7 +254,7 @@ def sync(
             "changes": results,
         }
 
-    logger.info("No changes required for '%s'", name)
+    logger.info("No configuration changes required for '%s'", name)
     return None
 
 
