@@ -18,7 +18,6 @@ It is built on top of another project of mine, [pihole-lib](https://github.com/d
 - [Configuration](#configuration)
 - [Development](#development)
 - [Contributing](#contributing)
-  - [How to Contribute](#how-to-contribute)
 - [Author](#author)
 - [License](#license)
 
@@ -149,7 +148,7 @@ instances:
 >         hosts: *hosts
 >
 >     lists: *lists
-``` 
+
 
 Set your password:
 ```bash
