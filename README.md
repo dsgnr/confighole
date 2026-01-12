@@ -6,12 +6,15 @@ ConfigHole is a small tool for managing one or more Pi-hole instances from a sin
 
 It is built on top of another project of mine, [pihole-lib](https://github.com/dsgnr/pihole-lib), a Python library that talks to the Pi-hole API.
 
+You can use this tool as a one-off to bootstrap an initial configuration, or run it as a daemon that periodically checks for changes in your local config.
+
+It’s one of those tools where the time spent building it far exceeds the time you’ll ever spend manually tweaking settings - see [https://xkcd.com/1319](https://xkcd.com/1319).
+
 ## Table of Contents
 
 - [Disclaimer](#disclaimer)
 - [Supported Pi-hole Versions](#supported-pi-hole-versions)
 - [Features](#features)
-- [TODO](#todo)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Daemon Mode](#daemon-mode)
@@ -105,6 +108,7 @@ instances:
   - name: home
     base_url: http://192.168.1.100
     password: "${PIHOLE_PASSWORD}"
+    update_gravity: true
     config:
       dns:
         upstreams: ["1.1.1.1", "1.0.0.1"]
@@ -154,6 +158,7 @@ instances:
 >   - name: home
 >     base_url: http://192.168.1.100
 >     password: "${PIHOLE_PASSWORD}"
+>     update_gravity: false
 >     config:
 >       dns:
 >         hosts: *hosts
@@ -276,6 +281,18 @@ Per-instance configuration:
 - `groups` - Pi-hole groups to manage
 - `clients` - Pi-hole clients to manage
 
+### Lists configuration
+
+The subscribed allowlist or blocklists:
+
+```yaml
+lists:
+  - address: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+    type: deny
+    comment: StevenBlack's Unified Hosts List
+    groups: [0]
+    enabled: true
+```
 ### Domain configuration
 
 Domains support both exact matches and regex patterns, for both allow and deny lists:
