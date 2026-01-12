@@ -1,0 +1,42 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: confighole-config
+data:
+  config.yaml: |
+    # Global settings applied to all instances
+    global:
+      timeout: 30
+      verify_ssl: false
+      verbosity: 1              # Log verbosity: 0=WARNING, 1=INFO, 2=DEBUG
+      dry_run: true             # Enable dry-run
+
+      # Daemon mode settings
+      daemon_mode: false        # Enable daemon mode by default
+      daemon_interval: 300      # Sync interval in seconds (5 minutes)
+
+    instances:
+      - name: homelab
+        base_url: http://192.168.1.100
+        password: "${PIHOLE_PASSWORD}"
+        config:
+          dns:
+            hosts:
+              - ip: 192.168.1.1
+                host: gateway.lab
+              - ip: 192.168.1.10
+                host: nas.lab
+              - ip: 192.168.1.20
+                host: k8s-master.lab
+            cnameRecords:
+              - name: plex.lab
+                target: nas.lab
+              - name: grafana.lab
+                target: k8s-master.lab
+        lists:
+          - address: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+            type: deny
+            comment: StevenBlack's Unified Hosts List
+            groups: [0]
+            enabled: true

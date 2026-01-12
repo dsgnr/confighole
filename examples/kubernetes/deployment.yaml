@@ -1,0 +1,46 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: confighole
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: confighole
+  template:
+    metadata:
+      labels:
+        app: confighole
+    spec:
+      containers:
+        - name: confighole
+          image: ghcr.io/dsgnr/confighole:latest
+          imagePullPolicy: Always
+          env:
+            - name: CONFIGHOLE_DAEMON_MODE
+              value: "true"
+            - name: CONFIGHOLE_CONFIG_PATH
+              value: "/config/config.yaml"
+            - name: CONFIGHOLE_DAEMON_INTERVAL
+              value: "300"
+            - name: CONFIGHOLE_DRY_RUN
+              value: "false"
+            - name: CONFIGHOLE_INSTANCE
+              value: ""
+            - name: CONFIGHOLE_VERBOSE
+              value: "1"
+            - name: PIHOLE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: confighole-secrets
+                  key: pihole-password
+          volumeMounts:
+            - name: config
+              mountPath: /config/config.yaml
+              subPath: config.yaml
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: confighole-config
