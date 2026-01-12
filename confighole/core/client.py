@@ -20,6 +20,7 @@ from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.helpers import (
     normalise_configuration,
     normalise_remote_domains,
+    normalise_remote_groups,
     normalise_remote_lists,
 )
 
@@ -172,6 +173,27 @@ class PiHoleManager:
 
         except Exception as exc:
             logger.error("Failed to fetch domains: %s", exc)
+            self._handle_auth_error(exc)
+            raise
+
+    def fetch_groups(self) -> list[dict[str, Any]]:
+        """Fetch remote Pi-hole groups.
+
+        Returns:
+            List of normalised group dictionaries.
+
+        Raises:
+            RuntimeError: If client is not initialised.
+        """
+        client = self._ensure_client()
+
+        try:
+            logger.debug("Fetching Pi-hole groups...")
+            raw_groups = client.groups.get_groups().groups
+            return normalise_remote_groups(raw_groups)
+
+        except Exception as exc:
+            logger.error("Failed to fetch groups: %s", exc)
             self._handle_auth_error(exc)
             raise
 
@@ -447,6 +469,95 @@ class PiHoleManager:
         if items_to_remove:
             client.domains.batch_delete_domains(items_to_remove)
             logger.debug("Removed domains: %s", [item.item for item in items_to_remove])
+
+    def update_groups(
+        self,
+        groups_changes: dict[str, dict[str, Any]],
+        *,
+        dry_run: bool = False,
+    ) -> bool:
+        """Apply group changes to Pi-hole instance.
+
+        Args:
+            groups_changes: Dictionary with 'add', 'change', and 'remove' keys.
+            dry_run: If True, only log what would change without applying.
+
+        Returns:
+            True if successful, False on failure.
+
+        Raises:
+            RuntimeError: If client is not initialised.
+        """
+        client = self._ensure_client()
+
+        if not groups_changes:
+            logger.info("No group changes to apply")
+            return True
+
+        try:
+            if dry_run:
+                logger.info(
+                    "Would apply group changes: %s", list(groups_changes.keys())
+                )
+                return True
+
+            self._apply_group_additions(client, groups_changes)
+            self._apply_group_changes(client, groups_changes)
+            self._apply_group_removals(client, groups_changes)
+
+            logger.info("Successfully applied group changes")
+            return True
+
+        except Exception as exc:
+            logger.error("Failed to update groups: %s", exc)
+            return False
+
+    def _apply_group_additions(
+        self,
+        client: PiHoleClient,
+        groups_changes: dict[str, dict[str, Any]],
+    ) -> None:
+        """Apply group additions."""
+        if "add" not in groups_changes:
+            return
+
+        for group_item in groups_changes["add"]["local"]:
+            client.groups.create_group(
+                name=group_item["name"],
+                comment=group_item.get("comment"),
+                enabled=group_item.get("enabled", True),
+            )
+            logger.debug("Added group: %s", group_item["name"])
+
+    def _apply_group_changes(
+        self,
+        client: PiHoleClient,
+        groups_changes: dict[str, dict[str, Any]],
+    ) -> None:
+        """Apply group changes."""
+        if "change" not in groups_changes:
+            return
+
+        for group_item in groups_changes["change"]["local"]:
+            client.groups.update_group(
+                name=group_item["name"],
+                comment=group_item.get("comment"),
+                enabled=group_item.get("enabled", True),
+            )
+            logger.debug("Updated group: %s", group_item["name"])
+
+    def _apply_group_removals(
+        self,
+        client: PiHoleClient,
+        groups_changes: dict[str, dict[str, Any]],
+    ) -> None:
+        """Apply group removals."""
+        if "remove" not in groups_changes:
+            return
+
+        for group_item in groups_changes["remove"]["remote"]:
+            client.groups.delete_group(group_item["name"])
+            logger.debug("Removed group: %s", group_item["name"])
 
 
 def create_manager(instance_config: dict[str, Any]) -> PiHoleManager | None:

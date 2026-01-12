@@ -11,6 +11,7 @@ from confighole.core.client import create_manager
 from confighole.utils.diff import (
     calculate_config_diff,
     calculate_domains_diff,
+    calculate_groups_diff,
     calculate_lists_diff,
 )
 from confighole.utils.exceptions import ConfigurationError
@@ -49,6 +50,7 @@ def dump_instance_data(instance_config: dict[str, Any]) -> dict[str, Any] | None
                 "config": manager.fetch_configuration(),
                 "lists": manager.fetch_lists(),
                 "domains": manager.fetch_domains(),
+                "groups": manager.fetch_groups(),
             }
     except Exception as exc:
         logger.error("Failed to connect to for '%s': %s", name, exc)
@@ -66,16 +68,15 @@ def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | No
     """
     name = instance_config.get("name", "unknown")
     base_url = instance_config.get("base_url")
-    local_config = instance_config.get("config", {})
-    local_lists = instance_config.get("lists", [])
-    local_domains = instance_config.get("domains", [])
+    local_config = instance_config.get("config")
+    local_lists = instance_config.get("lists")
+    local_domains = instance_config.get("domains")
+    local_groups = instance_config.get("groups")
 
     # Check if any local configuration exists
-    has_local_config = any([local_config, local_lists, local_domains])
+    has_local_config = any([local_config, local_lists, local_domains, local_groups])
     if not has_local_config:
-        logger.info(
-            "No local configuration, lists, or domains found for instance '%s'", name
-        )
+        logger.info("No local configuration found for instance '%s'", name)
         return None
 
     manager = create_manager(instance_config)
@@ -108,6 +109,12 @@ def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | No
                 domains_diff = calculate_domains_diff(local_domains, remote_domains)
                 if domains_diff:
                     differences["domains"] = domains_diff
+
+            if local_groups is not None:
+                remote_groups = manager.fetch_groups()
+                groups_diff = calculate_groups_diff(local_groups, remote_groups)
+                if groups_diff:
+                    differences["groups"] = groups_diff
 
             if not differences:
                 logger.info("No differences found for '%s'", name)
@@ -291,12 +298,67 @@ def sync_domain_config(
         return None
 
 
+def sync_group_config(
+    instance_config: dict[str, Any],
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any] | None:
+    """Synchronise local groups configuration to Pi-hole instance.
+
+    Args:
+        instance_config: Instance configuration dictionary.
+        dry_run: If True, only report what would change without applying.
+
+    Returns:
+        Dictionary containing applied changes, or None if no changes needed.
+    """
+    name = instance_config.get("name", "unknown")
+    base_url = instance_config.get("base_url")
+    local_groups = instance_config.get("groups")
+
+    if not local_groups:
+        logger.info("No local groups found for instance '%s'", name)
+        return None
+
+    manager = create_manager(instance_config)
+    if not manager:
+        return None
+
+    logger.info("Synchronising groups for '%s' (%s)", name, base_url)
+
+    try:
+        with manager:
+            remote_groups = manager.fetch_groups()
+            changes = calculate_groups_diff(local_groups, remote_groups)
+
+            if not changes:
+                logger.info("No group changes required for '%s'", name)
+                return None
+
+            if dry_run:
+                logger.info("Would apply group changes for '%s':", name)
+                print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
+            else:
+                if not manager.update_groups(changes, dry_run=False):
+                    return None
+
+            return {
+                "name": name,
+                "base_url": base_url,
+                "changes": changes,
+            }
+
+    except Exception as exc:
+        logger.error("Failed to synchronise groups for '%s': %s", name, exc)
+        return None
+
+
 def sync(
     instance_config: dict[str, Any],
     *,
     dry_run: bool = False,
 ) -> dict[str, Any] | None:
-    """Synchronise configuration, lists, and domains to Pi-hole instance.
+    """Synchronise configuration, lists, domains, and groups to Pi-hole instance.
 
     Args:
         instance_config: Instance configuration dictionary.
@@ -319,6 +381,10 @@ def sync(
     domains_result = sync_domain_config(instance_config, dry_run=dry_run)
     if domains_result:
         results["domains"] = domains_result.get("changes", {})
+
+    groups_result = sync_group_config(instance_config, dry_run=dry_run)
+    if groups_result:
+        results["groups"] = groups_result.get("changes", {})
 
     if results:
         return {

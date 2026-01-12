@@ -17,6 +17,7 @@ from confighole.utils.config import (
 from confighole.utils.diff import (
     calculate_config_diff,
     calculate_domains_diff,
+    calculate_groups_diff,
     calculate_lists_diff,
 )
 from confighole.utils.exceptions import ConfigurationError
@@ -35,6 +36,7 @@ from tests.constants import (
     SAMPLE_DNS_HOSTS,
     SAMPLE_DNS_UPSTREAMS,
     SAMPLE_DOMAIN,
+    SAMPLE_GROUP,
     SAMPLE_LIST,
 )
 
@@ -866,3 +868,116 @@ class TestSyncDomainConfig:
 
         assert result is not None
         mock_manager.update_domains.assert_not_called()
+
+
+@pytest.mark.unit
+class TestGroupsDiff:
+    """Tests for Pi-hole groups diff calculation."""
+
+    def test_identical_groups_no_diff(self):
+        """Identical groups produce empty diff."""
+        groups = [SAMPLE_GROUP]
+        assert calculate_groups_diff(groups, groups) == {}
+
+    def test_addition_detected(self):
+        """New group in local is detected as addition."""
+        local = [SAMPLE_GROUP]
+        remote: list[dict] = []
+
+        result = calculate_groups_diff(local, remote)
+
+        assert "add" in result
+        assert len(result["add"]["local"]) == 1
+        assert "remove" not in result
+
+    def test_removal_detected(self):
+        """Group only in remote is detected as removal."""
+        local: list[dict] = []
+        remote = [SAMPLE_GROUP]
+
+        result = calculate_groups_diff(local, remote)
+
+        assert "remove" in result
+        assert len(result["remove"]["remote"]) == 1
+        assert "add" not in result
+
+    def test_change_detected(self):
+        """Changed group properties are detected."""
+        local = [{**SAMPLE_GROUP, "comment": "Updated"}]
+        remote = [SAMPLE_GROUP]
+
+        result = calculate_groups_diff(local, remote)
+
+        assert "change" in result
+        assert len(result["change"]["local"]) == 1
+
+    def test_enabled_normalisation(self):
+        """Truthy enabled values are treated as equal."""
+        local = [{**SAMPLE_GROUP, "enabled": True}]
+        remote = [{**SAMPLE_GROUP, "enabled": 1}]
+
+        assert calculate_groups_diff(local, remote) == {}
+
+    def test_none_remote_handled(self):
+        """None remote groups handled as empty."""
+        local = [SAMPLE_GROUP]
+
+        result = calculate_groups_diff(local, None)
+
+        assert "add" in result
+
+
+@pytest.mark.unit
+class TestSyncGroupConfig:
+    """Tests for sync_group_config function."""
+
+    def test_sync_groups_returns_none_without_local_groups(self):
+        """sync_group_config returns None without local groups."""
+        from confighole.utils.tasks import sync_group_config
+
+        result = sync_group_config({"name": "test", "base_url": "http://test"})
+
+        assert result is None
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_groups_calls_update(self, mock_create_manager):
+        """sync_group_config calls update_groups on manager."""
+        from confighole.utils.tasks import sync_group_config
+
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_groups.return_value = []
+        mock_manager.update_groups.return_value = True
+        mock_create_manager.return_value = mock_manager
+
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "groups": [SAMPLE_GROUP],
+        }
+
+        result = sync_group_config(config, dry_run=False)
+
+        assert result is not None
+        assert result["name"] == "test"
+        mock_manager.update_groups.assert_called_once()
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_groups_no_changes_returns_none(self, mock_create_manager):
+        """sync_group_config returns None when no changes needed."""
+        from confighole.utils.tasks import sync_group_config
+
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_groups.return_value = [SAMPLE_GROUP]
+        mock_create_manager.return_value = mock_manager
+
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "groups": [SAMPLE_GROUP],
+        }
+
+        result = sync_group_config(config, dry_run=False)
+
+        assert result is None

@@ -41,6 +41,7 @@ Designed and tested against Pi-hole **v6.0 and newer**.
 - Keep multiple Pi-hole instances in sync
 - Manage blocklists and allowlists
 - Manage domains (exact and regex, allow and deny)
+- Manage groups
 - See exactly what will change before applying it
 - Dry-run mode so you can test without touching anything
 - Optional daemon mode for periodic reconciliation
@@ -49,7 +50,6 @@ Designed and tested against Pi-hole **v6.0 and newer**.
 In the order I'd like to get them done:
 - Optional Gravity update when lists change
 - DHCP config support
-- Groups support
 - Clients management
 
 ## Installation
@@ -276,6 +276,7 @@ Per-instance configuration:
 - `config` - Pi-hole configuration to manage
 - `lists` - Pi-hole lists to manage
 - `domains` - Pi-hole domains to manage (exact/regex, allow/deny)
+- `groups` - Pi-hole groups to manage
 
 ### Domain configuration
 
@@ -300,8 +301,22 @@ domains:
     enabled: true
 ```
 
+### Group configuration
+
+Groups allow you to organise clients and apply different filtering rules:
+
+```yaml
+groups:
+  - name: family
+    comment: "Family devices"
+    enabled: true
+  - name: iot
+    comment: "IoT devices with strict filtering"
+    enabled: true
+```
+
 > [!NOTE]
-> Only base Pi-hole config, lists, and domains are supported right now. Groups, DHCP are not yet supported.
+> Only base Pi-hole config, lists, domains, and groups are supported right now. DHCP and clients are not yet supported.
 
 ## Development
 

@@ -138,6 +138,29 @@ def calculate_domains_diff(
     )
 
 
+def calculate_groups_diff(
+    local_groups: list[dict[str, Any]],
+    remote_groups: list[dict[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    """Calculate differences between local and remote Pi-hole groups.
+
+    Compares groups by name.
+
+    Args:
+        local_groups: Group configurations from local YAML.
+        remote_groups: Group configurations from remote Pi-hole instance.
+
+    Returns:
+        Dictionary with 'add', 'change', and 'remove' keys.
+    """
+    return _calculate_items_diff(
+        local_groups,
+        remote_groups,
+        key_func=lambda item: item["name"],
+        compare_fields=["comment", "enabled"],
+    )
+
+
 def calculate_config_diff(
     local_config: Any,
     remote_config: Any,

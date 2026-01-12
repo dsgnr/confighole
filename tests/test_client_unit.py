@@ -93,6 +93,20 @@ class TestPiHoleManagerOperations:
         with pytest.raises(RuntimeError, match="Client not initialised"):
             manager.update_domains({"add": {}})
 
+    def test_fetch_groups_not_initialised_raises(self):
+        """fetch_groups raises when not initialised."""
+        manager = PiHoleManager("http://test", "password")
+
+        with pytest.raises(RuntimeError, match="Client not initialised"):
+            manager.fetch_groups()
+
+    def test_update_groups_not_initialised_raises(self):
+        """update_groups raises when not initialised."""
+        manager = PiHoleManager("http://test", "password")
+
+        with pytest.raises(RuntimeError, match="Client not initialised"):
+            manager.update_groups({"add": {}})
+
     def test_update_config_empty_changes_returns_true(self):
         """Empty changes returns True without calling API."""
         manager = PiHoleManager("http://test", "password")
@@ -118,6 +132,15 @@ class TestPiHoleManagerOperations:
         manager._client = Mock()
 
         result = manager.update_domains({})
+
+        assert result is True
+
+    def test_update_groups_empty_changes_returns_true(self):
+        """Empty group changes returns True without calling API."""
+        manager = PiHoleManager("http://test", "password")
+        manager._client = Mock()
+
+        result = manager.update_groups({})
 
         assert result is True
 
@@ -459,5 +482,101 @@ class TestDomainOperations:
         }
 
         result = manager.update_domains(changes)
+
+        assert result is False
+
+
+@pytest.mark.unit
+class TestGroupOperations:
+    """Tests for group update operations."""
+
+    def test_apply_group_additions(self):
+        """Group additions are applied correctly."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        manager._client = mock_client
+
+        changes = {
+            "add": {
+                "local": [
+                    {
+                        "name": "test-group",
+                        "comment": "Test",
+                        "enabled": True,
+                    }
+                ]
+            }
+        }
+
+        manager._apply_group_additions(mock_client, changes)
+
+        mock_client.groups.create_group.assert_called_once()
+
+    def test_apply_group_removals(self):
+        """Group removals are applied correctly."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        manager._client = mock_client
+
+        changes = {
+            "remove": {
+                "remote": [
+                    {
+                        "name": "test-group",
+                    }
+                ]
+            }
+        }
+
+        manager._apply_group_removals(mock_client, changes)
+
+        mock_client.groups.delete_group.assert_called_once()
+
+    def test_apply_group_changes(self):
+        """Group changes update the group."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        manager._client = mock_client
+
+        changes = {
+            "change": {
+                "local": [
+                    {
+                        "name": "test-group",
+                        "comment": "Updated",
+                        "enabled": True,
+                    }
+                ],
+                "remote": [
+                    {
+                        "name": "test-group",
+                        "comment": "Original",
+                    }
+                ],
+            }
+        }
+
+        manager._apply_group_changes(mock_client, changes)
+
+        mock_client.groups.update_group.assert_called_once()
+
+    def test_update_groups_failure_returns_false(self):
+        """API failure returns False."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        mock_client.groups.create_group.side_effect = Exception("API Error")
+        manager._client = mock_client
+
+        changes = {
+            "add": {
+                "local": [
+                    {
+                        "name": "test-group",
+                    }
+                ]
+            }
+        }
+
+        result = manager.update_groups(changes)
 
         assert result is False

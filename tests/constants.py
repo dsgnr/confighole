@@ -61,3 +61,10 @@ SAMPLE_DOMAIN_REGEX = {
     "groups": [0],
     "enabled": True,
 }
+
+# Sample group configuration for tests
+SAMPLE_GROUP = {
+    "name": "test-group",
+    "comment": "Test group",
+    "enabled": True,
+}
