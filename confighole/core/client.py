@@ -220,6 +220,31 @@ class PiHoleManager:
             self._handle_auth_error(exc)
             raise
 
+    def update_gravity(self) -> bool:
+        """Update Pi-hole's gravity database.
+
+        Triggers a gravity update to download and process all configured adlists.
+
+        Returns:
+            True if successful, False on failure.
+
+        Raises:
+            RuntimeError: If client is not initialised.
+        """
+        client = self._ensure_client()
+
+        try:
+            logger.info("Updating gravity database...")
+            for line in client.actions.update_gravity():
+                logger.debug("Gravity: %s", line.strip())
+            logger.info("Gravity update completed")
+            return True
+
+        except Exception as exc:
+            logger.error("Failed to update gravity: %s", exc)
+            return False
+            raise
+
     def update_configuration(
         self,
         config_changes: dict[str, Any],

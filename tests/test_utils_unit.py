@@ -1096,3 +1096,99 @@ class TestSyncClientConfig:
         result = sync_client_config(config, dry_run=False)
 
         assert result is None
+
+
+@pytest.mark.unit
+class TestSyncListConfigWithGravity:
+    """Tests for sync_list_config with gravity update."""
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_lists_updates_gravity_when_enabled(self, mock_create_manager):
+        """sync_list_config calls update_gravity when enabled."""
+        from confighole.utils.tasks import sync_list_config
+
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_lists.return_value = []
+        mock_manager.update_lists.return_value = True
+        mock_manager.update_gravity.return_value = True
+        mock_create_manager.return_value = mock_manager
+
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "lists": [SAMPLE_LIST],
+            "update_gravity": True,
+        }
+
+        result = sync_list_config(config, dry_run=False)
+
+        assert result is not None
+        mock_manager.update_gravity.assert_called_once()
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_lists_skips_gravity_when_disabled(self, mock_create_manager):
+        """sync_list_config skips update_gravity when disabled."""
+        from confighole.utils.tasks import sync_list_config
+
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_lists.return_value = []
+        mock_manager.update_lists.return_value = True
+        mock_create_manager.return_value = mock_manager
+
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "lists": [SAMPLE_LIST],
+            "update_gravity": False,
+        }
+
+        result = sync_list_config(config, dry_run=False)
+
+        assert result is not None
+        mock_manager.update_gravity.assert_not_called()
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_lists_skips_gravity_by_default(self, mock_create_manager):
+        """sync_list_config skips update_gravity by default."""
+        from confighole.utils.tasks import sync_list_config
+
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_lists.return_value = []
+        mock_manager.update_lists.return_value = True
+        mock_create_manager.return_value = mock_manager
+
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "lists": [SAMPLE_LIST],
+        }
+
+        result = sync_list_config(config, dry_run=False)
+
+        assert result is not None
+        mock_manager.update_gravity.assert_not_called()
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_lists_dry_run_skips_gravity(self, mock_create_manager):
+        """sync_list_config dry run doesn't call update_gravity."""
+        from confighole.utils.tasks import sync_list_config
+
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_lists.return_value = []
+        mock_create_manager.return_value = mock_manager
+
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "lists": [SAMPLE_LIST],
+            "update_gravity": True,
+        }
+
+        result = sync_list_config(config, dry_run=True)
+
+        assert result is not None
+        mock_manager.update_gravity.assert_not_called()

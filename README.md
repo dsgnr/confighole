@@ -43,13 +43,10 @@ Designed and tested against Pi-hole **v6.0 and newer**.
 - Manage domains (exact and regex, allow and deny)
 - Manage groups
 - Manage clients
+- Optional automatic gravity update when lists change
 - See exactly what will change before applying it
 - Dry-run mode so you can test without touching anything
 - Optional daemon mode for periodic reconciliation
-
-## TODO
-In the order I'd like to get them done:
-- Optional Gravity update when lists change
 
 ## Installation
 
@@ -272,6 +269,7 @@ Per-instance configuration:
 - `name` - Instance identifier
 - `base_url` - Pi-hole web interface URL  
 - `password` - Admin password (supports `${ENV_VAR}`)
+- `update_gravity` - Automatically update gravity when lists change (`true`/`false`, default: `false`)
 - `config` - Pi-hole configuration to manage
 - `lists` - Pi-hole lists to manage
 - `domains` - Pi-hole domains to manage (exact/regex, allow/deny)

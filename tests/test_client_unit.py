@@ -699,3 +699,38 @@ class TestClientOperations:
         result = manager.update_clients(changes)
 
         assert result is False
+
+
+@pytest.mark.unit
+class TestGravityOperations:
+    """Tests for gravity update operations."""
+
+    def test_update_gravity_not_initialised_raises(self):
+        """update_gravity raises when not initialised."""
+        manager = PiHoleManager("http://test", "password")
+
+        with pytest.raises(RuntimeError, match="Client not initialised"):
+            manager.update_gravity()
+
+    def test_update_gravity_success(self):
+        """update_gravity returns True on success."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        mock_client.actions.update_gravity.return_value = iter(["line1", "line2"])
+        manager._client = mock_client
+
+        result = manager.update_gravity()
+
+        assert result is True
+        mock_client.actions.update_gravity.assert_called_once()
+
+    def test_update_gravity_failure_returns_false(self):
+        """update_gravity returns False on failure."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        mock_client.actions.update_gravity.side_effect = Exception("API Error")
+        manager._client = mock_client
+
+        result = manager.update_gravity()
+
+        assert result is False

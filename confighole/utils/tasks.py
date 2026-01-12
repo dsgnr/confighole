@@ -216,6 +216,7 @@ def sync_list_config(
     name = instance_config.get("name", "unknown")
     base_url = instance_config.get("base_url")
     local_lists = instance_config.get("lists")
+    update_gravity = instance_config.get("update_gravity", False)
 
     if not local_lists:
         logger.info("No local lists found for instance '%s'", name)
@@ -239,9 +240,14 @@ def sync_list_config(
             if dry_run:
                 logger.info("Would apply list changes for '%s':", name)
                 print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
+                if update_gravity:
+                    logger.info("Would update gravity for '%s'", name)
             else:
                 if not manager.update_lists(changes, dry_run=False):
                     return None
+
+                if update_gravity:
+                    manager.update_gravity()
 
             return {
                 "name": name,
