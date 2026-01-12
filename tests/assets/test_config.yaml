@@ -30,8 +30,8 @@ instances:
           - name: grafana.test
             target: gateway.test
     lists:
-      - address: "https://example.com/list.txt"
+      - address: "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
         type: "block"
-        comment: "Test list"
+        comment: "Migrated from /etc/pihole/adlists.list"
         groups: [0]
         enabled: True

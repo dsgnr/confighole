@@ -65,6 +65,13 @@ class TestPiHoleManagerOperations:
         with pytest.raises(RuntimeError, match="Client not initialised"):
             manager.fetch_lists()
 
+    def test_fetch_domains_not_initialised_raises(self):
+        """fetch_domains raises when not initialised."""
+        manager = PiHoleManager("http://test", "password")
+
+        with pytest.raises(RuntimeError, match="Client not initialised"):
+            manager.fetch_domains()
+
     def test_update_config_not_initialised_raises(self):
         """update_configuration raises when not initialised."""
         manager = PiHoleManager("http://test", "password")
@@ -78,6 +85,13 @@ class TestPiHoleManagerOperations:
 
         with pytest.raises(RuntimeError, match="Client not initialised"):
             manager.update_lists({"add": {}})
+
+    def test_update_domains_not_initialised_raises(self):
+        """update_domains raises when not initialised."""
+        manager = PiHoleManager("http://test", "password")
+
+        with pytest.raises(RuntimeError, match="Client not initialised"):
+            manager.update_domains({"add": {}})
 
     def test_update_config_empty_changes_returns_true(self):
         """Empty changes returns True without calling API."""
@@ -98,6 +112,15 @@ class TestPiHoleManagerOperations:
 
         assert result is True
 
+    def test_update_domains_empty_changes_returns_true(self):
+        """Empty domain changes returns True without calling API."""
+        manager = PiHoleManager("http://test", "password")
+        manager._client = Mock()
+
+        result = manager.update_domains({})
+
+        assert result is True
+
     def test_update_config_dry_run_returns_true(self):
         """Dry run returns True without calling API."""
         manager = PiHoleManager("http://test", "password")
@@ -114,6 +137,15 @@ class TestPiHoleManagerOperations:
         manager._client = Mock()
 
         result = manager.update_lists({"add": {"local": []}}, dry_run=True)
+
+        assert result is True
+
+    def test_update_domains_dry_run_returns_true(self):
+        """Dry run returns True without calling API."""
+        manager = PiHoleManager("http://test", "password")
+        manager._client = Mock()
+
+        result = manager.update_domains({"add": {"local": []}}, dry_run=True)
 
         assert result is True
 
@@ -323,3 +355,109 @@ class TestListOperations:
 
         mock_client.lists.batch_delete_lists.assert_called_once()
         mock_client.lists.update_list.assert_called_once()
+
+
+@pytest.mark.unit
+class TestDomainOperations:
+    """Tests for domain update operations."""
+
+    def test_apply_domain_additions(self):
+        """Domain additions are applied correctly."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        manager._client = mock_client
+
+        changes = {
+            "add": {
+                "local": [
+                    {
+                        "domain": "blocked.example.com",
+                        "type": "deny",
+                        "kind": "exact",
+                        "comment": "Test",
+                        "groups": [0],
+                        "enabled": True,
+                    }
+                ]
+            }
+        }
+
+        manager._apply_domain_additions(mock_client, changes)
+
+        mock_client.domains.add_domain.assert_called_once()
+
+    def test_apply_domain_removals(self):
+        """Domain removals are applied correctly."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        manager._client = mock_client
+
+        changes = {
+            "remove": {
+                "remote": [
+                    {
+                        "domain": "blocked.example.com",
+                        "type": "deny",
+                        "kind": "exact",
+                    }
+                ]
+            }
+        }
+
+        manager._apply_domain_removals(mock_client, changes)
+
+        mock_client.domains.batch_delete_domains.assert_called_once()
+
+    def test_apply_domain_changes(self):
+        """Domain changes delete old and update."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        manager._client = mock_client
+
+        changes = {
+            "change": {
+                "local": [
+                    {
+                        "domain": "blocked.example.com",
+                        "type": "deny",
+                        "kind": "exact",
+                        "comment": "Updated",
+                    }
+                ],
+                "remote": [
+                    {
+                        "domain": "blocked.example.com",
+                        "type": "deny",
+                        "kind": "exact",
+                    }
+                ],
+            }
+        }
+
+        manager._apply_domain_changes(mock_client, changes)
+
+        mock_client.domains.batch_delete_domains.assert_called_once()
+        mock_client.domains.update_domain.assert_called_once()
+
+    def test_update_domains_failure_returns_false(self):
+        """API failure returns False."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        mock_client.domains.add_domain.side_effect = Exception("API Error")
+        manager._client = mock_client
+
+        changes = {
+            "add": {
+                "local": [
+                    {
+                        "domain": "blocked.example.com",
+                        "type": "deny",
+                        "kind": "exact",
+                    }
+                ]
+            }
+        }
+
+        result = manager.update_domains(changes)
+
+        assert result is False

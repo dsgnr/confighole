@@ -39,6 +39,8 @@ Designed and tested against Pi-hole **v6.0 and newer**.
 
 - Manage Pi-hole configuration declaratively using YAML
 - Keep multiple Pi-hole instances in sync
+- Manage blocklists and allowlists
+- Manage domains (exact and regex, allow and deny)
 - See exactly what will change before applying it
 - Dry-run mode so you can test without touching anything
 - Optional daemon mode for periodic reconciliation
@@ -46,7 +48,6 @@ Designed and tested against Pi-hole **v6.0 and newer**.
 ## TODO
 In the order I'd like to get them done:
 - Optional Gravity update when lists change
-- Domain support (regex/exact white/black lists)
 - DHCP config support
 - Groups support
 - Clients management
@@ -139,6 +140,20 @@ instances:
 >     groups: [0]
 >     enabled: true
 >
+> domains: &domains
+>   - domain: ads.example.com
+>     type: deny
+>     kind: exact
+>     comment: Block ads domain
+>     groups: [0]
+>     enabled: true
+>   - domain: ".*\\.tracking\\..*"
+>     type: deny
+>     kind: regex
+>     comment: Block tracking subdomains
+>     groups: [0]
+>     enabled: true
+>
 > instances:
 >   - name: home
 >     base_url: http://192.168.1.100
@@ -148,6 +163,7 @@ instances:
 >         hosts: *hosts
 >
 >     lists: *lists
+>     domains: *domains
 
 
 Set your password:
@@ -258,10 +274,34 @@ Per-instance configuration:
 - `base_url` - Pi-hole web interface URL  
 - `password` - Admin password (supports `${ENV_VAR}`)
 - `config` - Pi-hole configuration to manage
-- `lists` - Pi-hole lists to manage.
+- `lists` - Pi-hole lists to manage
+- `domains` - Pi-hole domains to manage (exact/regex, allow/deny)
+
+### Domain configuration
+
+Domains support both exact matches and regex patterns, for both allow and deny lists:
+
+```yaml
+domains:
+  # Exact domain to block
+  - domain: ads.example.com
+    type: deny        # deny or allow
+    kind: exact       # exact or regex
+    comment: "Block ads"
+    groups: [0]
+    enabled: true
+
+  # Regex pattern to allow
+  - domain: ".*\\.trusted\\.com"
+    type: allow
+    kind: regex
+    comment: "Allow trusted subdomains"
+    groups: [0]
+    enabled: true
+```
 
 > [!NOTE]
-> Only base Pi-hole config and lists are supported right now. Groups, DHCP are not yet supported.
+> Only base Pi-hole config, lists, and domains are supported right now. Groups, DHCP are not yet supported.
 
 ## Development
 

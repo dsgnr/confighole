@@ -7,11 +7,21 @@ from types import TracebackType
 from typing import Any
 
 from pihole_lib import PiHoleClient
-from pihole_lib.models import BatchDeleteItem, ListType
+from pihole_lib.models import (
+    BatchDeleteItem,
+    DomainBatchDeleteItem,
+    DomainKind,
+    DomainType,
+    ListType,
+)
 
 from confighole.utils.config import resolve_password, validate_instance_config
 from confighole.utils.exceptions import ConfigurationError
-from confighole.utils.helpers import normalise_configuration, normalise_remote_lists
+from confighole.utils.helpers import (
+    normalise_configuration,
+    normalise_remote_domains,
+    normalise_remote_lists,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +151,27 @@ class PiHoleManager:
 
         except Exception as exc:
             logger.error("Failed to fetch lists: %s", exc)
+            self._handle_auth_error(exc)
+            raise
+
+    def fetch_domains(self) -> list[dict[str, Any]]:
+        """Fetch remote Pi-hole domains.
+
+        Returns:
+            List of normalised domain dictionaries.
+
+        Raises:
+            RuntimeError: If client is not initialised.
+        """
+        client = self._ensure_client()
+
+        try:
+            logger.debug("Fetching Pi-hole domains...")
+            raw_domains = client.domains.get_domains()
+            return normalise_remote_domains(raw_domains)
+
+        except Exception as exc:
+            logger.error("Failed to fetch domains: %s", exc)
             self._handle_auth_error(exc)
             raise
 
@@ -294,6 +325,128 @@ class PiHoleManager:
         if items_to_remove:
             client.lists.batch_delete_lists(items_to_remove)
             logger.debug("Removed lists: %s", [item.item for item in items_to_remove])
+
+    def update_domains(
+        self,
+        domains_changes: dict[str, dict[str, Any]],
+        *,
+        dry_run: bool = False,
+    ) -> bool:
+        """Apply domain changes to Pi-hole instance.
+
+        Args:
+            domains_changes: Dictionary with 'add', 'change', and 'remove' keys.
+            dry_run: If True, only log what would change without applying.
+
+        Returns:
+            True if successful, False on failure.
+
+        Raises:
+            RuntimeError: If client is not initialised.
+        """
+        client = self._ensure_client()
+
+        if not domains_changes:
+            logger.info("No domain changes to apply")
+            return True
+
+        try:
+            if dry_run:
+                logger.info(
+                    "Would apply domain changes: %s", list(domains_changes.keys())
+                )
+                return True
+
+            self._apply_domain_additions(client, domains_changes)
+            self._apply_domain_changes(client, domains_changes)
+            self._apply_domain_removals(client, domains_changes)
+
+            logger.info("Successfully applied domain changes")
+            return True
+
+        except Exception as exc:
+            logger.error("Failed to update domains: %s", exc)
+            return False
+
+    def _apply_domain_additions(
+        self,
+        client: PiHoleClient,
+        domains_changes: dict[str, dict[str, Any]],
+    ) -> None:
+        """Apply domain additions."""
+        if "add" not in domains_changes:
+            return
+
+        for domain_item in domains_changes["add"]["local"]:
+            client.domains.add_domain(
+                domain=domain_item["domain"],
+                domain_type=DomainType(domain_item["type"]),
+                domain_kind=DomainKind(domain_item["kind"]),
+                comment=domain_item.get("comment", ""),
+                groups=domain_item.get("groups", [0]),
+                enabled=domain_item.get("enabled", True),
+            )
+            logger.debug("Added domain: %s", domain_item["domain"])
+
+    def _apply_domain_changes(
+        self,
+        client: PiHoleClient,
+        domains_changes: dict[str, dict[str, Any]],
+    ) -> None:
+        """Apply domain changes (delete old, add new)."""
+        if "change" not in domains_changes:
+            return
+
+        # Delete old versions first
+        items_to_delete = [
+            DomainBatchDeleteItem(
+                item=item["domain"],
+                type=DomainType(item["type"]),
+                kind=DomainKind(item["kind"]),
+            )
+            for item in domains_changes["change"]["remote"]
+        ]
+
+        if items_to_delete:
+            client.domains.batch_delete_domains(items_to_delete)
+            logger.debug(
+                "Deleted old domain versions: %s",
+                [item.item for item in items_to_delete],
+            )
+
+        # Add updated versions
+        for domain_item in domains_changes["change"]["local"]:
+            client.domains.update_domain(
+                domain=domain_item["domain"],
+                domain_type=DomainType(domain_item["type"]),
+                domain_kind=DomainKind(domain_item["kind"]),
+                comment=domain_item.get("comment"),
+                groups=domain_item.get("groups"),
+                enabled=domain_item.get("enabled"),
+            )
+            logger.debug("Updated domain: %s", domain_item["domain"])
+
+    def _apply_domain_removals(
+        self,
+        client: PiHoleClient,
+        domains_changes: dict[str, dict[str, Any]],
+    ) -> None:
+        """Apply domain removals."""
+        if "remove" not in domains_changes:
+            return
+
+        items_to_remove = [
+            DomainBatchDeleteItem(
+                item=item["domain"],
+                type=DomainType(item["type"]),
+                kind=DomainKind(item["kind"]),
+            )
+            for item in domains_changes["remove"]["remote"]
+        ]
+
+        if items_to_remove:
+            client.domains.batch_delete_domains(items_to_remove)
+            logger.debug("Removed domains: %s", [item.item for item in items_to_remove])
 
 
 def create_manager(instance_config: dict[str, Any]) -> PiHoleManager | None:

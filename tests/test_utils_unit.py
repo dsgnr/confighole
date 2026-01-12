@@ -14,7 +14,11 @@ from confighole.utils.config import (
     merge_global_settings,
     resolve_password,
 )
-from confighole.utils.diff import calculate_config_diff, calculate_lists_diff
+from confighole.utils.diff import (
+    calculate_config_diff,
+    calculate_domains_diff,
+    calculate_lists_diff,
+)
 from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.helpers import (
     cnames_to_pihole_format,
@@ -23,12 +27,14 @@ from confighole.utils.helpers import (
     normalise_cname_records,
     normalise_configuration,
     normalise_dns_hosts,
+    normalise_remote_domains,
     validate_instance_config,
 )
 from tests.constants import (
     SAMPLE_DNS_CNAMES,
     SAMPLE_DNS_HOSTS,
     SAMPLE_DNS_UPSTREAMS,
+    SAMPLE_DOMAIN,
     SAMPLE_LIST,
 )
 
@@ -643,3 +649,220 @@ class TestTaskOperations:
         )
 
         assert result is None
+
+
+@pytest.mark.unit
+class TestDomainNormalisation:
+    """Tests for domain normalisation."""
+
+    def test_normalise_remote_domains(self):
+        """Remote domains are normalised correctly."""
+        from pihole_lib.models import Domain, DomainKind, DomainType
+
+        domains = [
+            Domain(
+                domain="blocked.example.com",
+                unicode="blocked.example.com",
+                type=DomainType.DENY,
+                kind=DomainKind.EXACT,
+                comment="Test domain",
+                groups=[0],
+                enabled=True,
+                id=1,
+                date_added=1234567890,
+                date_modified=1234567890,
+            ),
+            Domain(
+                domain=r".*\.ads\..*",
+                unicode=r".*\.ads\..*",
+                type=DomainType.DENY,
+                kind=DomainKind.REGEX,
+                comment="Block ads",
+                groups=[0, 1],
+                enabled=False,
+                id=2,
+                date_added=1234567890,
+                date_modified=1234567890,
+            ),
+        ]
+
+        result = normalise_remote_domains(domains)
+
+        assert len(result) == 2
+        assert result[0]["domain"] == "blocked.example.com"
+        assert result[0]["type"] == "deny"
+        assert result[0]["kind"] == "exact"
+        assert result[0]["comment"] == "Test domain"
+        assert result[0]["groups"] == [0]
+        assert result[0]["enabled"] is True
+
+        assert result[1]["domain"] == r".*\.ads\..*"
+        assert result[1]["type"] == "deny"
+        assert result[1]["kind"] == "regex"
+        assert result[1]["enabled"] is False
+
+    def test_normalise_remote_domains_empty(self):
+        """Empty domain list returns empty list."""
+        result = normalise_remote_domains([])
+        assert result == []
+
+
+@pytest.mark.unit
+class TestDomainsDiff:
+    """Tests for Pi-hole domains diff calculation."""
+
+    def test_identical_domains_no_diff(self):
+        """Identical domains produce empty diff."""
+        domains = [SAMPLE_DOMAIN]
+        assert calculate_domains_diff(domains, domains) == {}
+
+    def test_addition_detected(self):
+        """New domain in local is detected as addition."""
+        local = [SAMPLE_DOMAIN]
+        remote: list[dict] = []
+
+        result = calculate_domains_diff(local, remote)
+
+        assert "add" in result
+        assert len(result["add"]["local"]) == 1
+        assert "remove" not in result
+
+    def test_removal_detected(self):
+        """Domain only in remote is detected as removal."""
+        local: list[dict] = []
+        remote = [SAMPLE_DOMAIN]
+
+        result = calculate_domains_diff(local, remote)
+
+        assert "remove" in result
+        assert len(result["remove"]["remote"]) == 1
+        assert "add" not in result
+
+    def test_change_detected(self):
+        """Changed domain properties are detected."""
+        local = [{**SAMPLE_DOMAIN, "comment": "Updated"}]
+        remote = [SAMPLE_DOMAIN]
+
+        result = calculate_domains_diff(local, remote)
+
+        assert "change" in result
+        assert len(result["change"]["local"]) == 1
+
+    def test_groups_order_ignored(self):
+        """Group order doesn't affect comparison."""
+        local = [{**SAMPLE_DOMAIN, "groups": [0, 1]}]
+        remote = [{**SAMPLE_DOMAIN, "groups": [1, 0]}]
+
+        assert calculate_domains_diff(local, remote) == {}
+
+    def test_enabled_normalisation(self):
+        """Truthy enabled values are treated as equal."""
+        local = [{**SAMPLE_DOMAIN, "enabled": True}]
+        remote = [{**SAMPLE_DOMAIN, "enabled": 1}]
+
+        assert calculate_domains_diff(local, remote) == {}
+
+    def test_none_remote_handled(self):
+        """None remote domains handled as empty."""
+        local = [SAMPLE_DOMAIN]
+
+        result = calculate_domains_diff(local, None)
+
+        assert "add" in result
+
+    def test_different_type_treated_as_different_domain(self):
+        """Same domain with different type is treated as different."""
+        local = [{**SAMPLE_DOMAIN, "type": "allow"}]
+        remote = [SAMPLE_DOMAIN]  # type is "deny"
+
+        result = calculate_domains_diff(local, remote)
+
+        assert "add" in result
+        assert "remove" in result
+
+    def test_different_kind_treated_as_different_domain(self):
+        """Same domain with different kind is treated as different."""
+        local = [{**SAMPLE_DOMAIN, "kind": "regex"}]
+        remote = [SAMPLE_DOMAIN]  # kind is "exact"
+
+        result = calculate_domains_diff(local, remote)
+
+        assert "add" in result
+        assert "remove" in result
+
+
+@pytest.mark.unit
+class TestSyncDomainConfig:
+    """Tests for sync_domain_config function."""
+
+    def test_sync_domains_returns_none_without_local_domains(self):
+        """sync_domain_config returns None without local domains."""
+        from confighole.utils.tasks import sync_domain_config
+
+        result = sync_domain_config({"name": "test", "base_url": "http://test"})
+
+        assert result is None
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_domains_calls_update(self, mock_create_manager):
+        """sync_domain_config calls update_domains on manager."""
+        from confighole.utils.tasks import sync_domain_config
+
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_domains.return_value = []
+        mock_manager.update_domains.return_value = True
+        mock_create_manager.return_value = mock_manager
+
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "domains": [SAMPLE_DOMAIN],
+        }
+
+        result = sync_domain_config(config, dry_run=False)
+
+        assert result is not None
+        assert result["name"] == "test"
+        mock_manager.update_domains.assert_called_once()
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_domains_no_changes_returns_none(self, mock_create_manager):
+        """sync_domain_config returns None when no changes needed."""
+        from confighole.utils.tasks import sync_domain_config
+
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_domains.return_value = [SAMPLE_DOMAIN]
+        mock_create_manager.return_value = mock_manager
+
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "domains": [SAMPLE_DOMAIN],
+        }
+
+        result = sync_domain_config(config, dry_run=False)
+
+        assert result is None
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_domains_dry_run(self, mock_create_manager):
+        """sync_domain_config dry run doesn't call update."""
+        from confighole.utils.tasks import sync_domain_config
+
+        mock_manager = MagicMock()
+        mock_manager.__enter__.return_value = mock_manager
+        mock_manager.fetch_domains.return_value = []
+        mock_create_manager.return_value = mock_manager
+
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "domains": [SAMPLE_DOMAIN],
+        }
+
+        result = sync_domain_config(config, dry_run=True)
+
+        assert result is not None
+        mock_manager.update_domains.assert_not_called()

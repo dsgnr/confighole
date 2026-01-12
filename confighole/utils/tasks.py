@@ -8,7 +8,11 @@ from typing import Any
 import yaml
 
 from confighole.core.client import create_manager
-from confighole.utils.diff import calculate_config_diff, calculate_lists_diff
+from confighole.utils.diff import (
+    calculate_config_diff,
+    calculate_domains_diff,
+    calculate_lists_diff,
+)
 from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.helpers import (
     convert_diff_to_nested_dict,
@@ -44,6 +48,7 @@ def dump_instance_data(instance_config: dict[str, Any]) -> dict[str, Any] | None
                 "base_url": base_url,
                 "config": manager.fetch_configuration(),
                 "lists": manager.fetch_lists(),
+                "domains": manager.fetch_domains(),
             }
     except Exception as exc:
         logger.error("Failed to connect to for '%s': %s", name, exc)
@@ -63,10 +68,13 @@ def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | No
     base_url = instance_config.get("base_url")
     local_config = instance_config.get("config", {})
     local_lists = instance_config.get("lists", [])
+    local_domains = instance_config.get("domains", [])
 
-    if not local_config and not local_lists:
+    # Check if any local configuration exists
+    has_local_config = any([local_config, local_lists, local_domains])
+    if not has_local_config:
         logger.info(
-            "No local Pi-hole configuration or lists found for instance '%s'", name
+            "No local configuration, lists, or domains found for instance '%s'", name
         )
         return None
 
@@ -89,11 +97,17 @@ def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | No
                 if config_diff:
                     differences["config"] = config_diff
 
-            if local_lists:
+            if local_lists is not None:
                 remote_lists = manager.fetch_lists()
                 lists_diff = calculate_lists_diff(local_lists, remote_lists)
                 if lists_diff:
                     differences["lists"] = lists_diff
+
+            if local_domains is not None:
+                remote_domains = manager.fetch_domains()
+                domains_diff = calculate_domains_diff(local_domains, remote_domains)
+                if domains_diff:
+                    differences["domains"] = domains_diff
 
             if not differences:
                 logger.info("No differences found for '%s'", name)
@@ -222,12 +236,67 @@ def sync_list_config(
         return None
 
 
+def sync_domain_config(
+    instance_config: dict[str, Any],
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any] | None:
+    """Synchronise local domains configuration to Pi-hole instance.
+
+    Args:
+        instance_config: Instance configuration dictionary.
+        dry_run: If True, only report what would change without applying.
+
+    Returns:
+        Dictionary containing applied changes, or None if no changes needed.
+    """
+    name = instance_config.get("name", "unknown")
+    base_url = instance_config.get("base_url")
+    local_domains = instance_config.get("domains")
+
+    if not local_domains:
+        logger.info("No local domains found for instance '%s'", name)
+        return None
+
+    manager = create_manager(instance_config)
+    if not manager:
+        return None
+
+    logger.info("Synchronising domains for '%s' (%s)", name, base_url)
+
+    try:
+        with manager:
+            remote_domains = manager.fetch_domains()
+            changes = calculate_domains_diff(local_domains, remote_domains)
+
+            if not changes:
+                logger.info("No domain changes required for '%s'", name)
+                return None
+
+            if dry_run:
+                logger.info("Would apply domain changes for '%s':", name)
+                print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
+            else:
+                if not manager.update_domains(changes, dry_run=False):
+                    return None
+
+            return {
+                "name": name,
+                "base_url": base_url,
+                "changes": changes,
+            }
+
+    except Exception as exc:
+        logger.error("Failed to synchronise domains for '%s': %s", name, exc)
+        return None
+
+
 def sync(
     instance_config: dict[str, Any],
     *,
     dry_run: bool = False,
 ) -> dict[str, Any] | None:
-    """Synchronise both configuration and lists to Pi-hole instance.
+    """Synchronise configuration, lists, and domains to Pi-hole instance.
 
     Args:
         instance_config: Instance configuration dictionary.
@@ -246,6 +315,10 @@ def sync(
     lists_result = sync_list_config(instance_config, dry_run=dry_run)
     if lists_result:
         results["lists"] = lists_result.get("changes", {})
+
+    domains_result = sync_domain_config(instance_config, dry_run=dry_run)
+    if domains_result:
+        results["domains"] = domains_result.get("changes", {})
 
     if results:
         return {

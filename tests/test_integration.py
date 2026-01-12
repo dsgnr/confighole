@@ -219,9 +219,6 @@ class TestTaskOperations:
         # Get current config to match
         current = dump_instance_data(instance)
 
-        # Remove lists data
-        instance["lists"], current["lists"] = [], []
-
         instance["config"]["dns"] = {
             "upstreams": current["config"]["dns"]["upstreams"],
             "queryLogging": current["config"]["dns"]["queryLogging"],

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pihole_lib.models import PiHoleList
+from pihole_lib.models import Domain, PiHoleList
 
 from confighole.utils.config import resolve_password
 from confighole.utils.exceptions import ConfigurationError
@@ -124,6 +124,28 @@ def normalise_remote_lists(lists: list[PiHoleList]) -> list[dict[str, Any]]:
             "enabled": list_item.enabled,
         }
         for list_item in lists
+    ]
+
+
+def normalise_remote_domains(domains: list[Domain]) -> list[dict[str, Any]]:
+    """Normalise remote Pi-hole domains to consistent dictionary format.
+
+    Args:
+        domains: List of Domain objects from the Pi-hole API.
+
+    Returns:
+        List of normalised domain dictionaries.
+    """
+    return [
+        {
+            "domain": domain_item.domain,
+            "type": domain_item.type.value,
+            "kind": domain_item.kind.value,
+            "comment": domain_item.comment,
+            "groups": domain_item.groups,
+            "enabled": domain_item.enabled,
+        }
+        for domain_item in domains
     ]
 
 

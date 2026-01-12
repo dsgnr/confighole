@@ -2,7 +2,94 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
+
+
+def _calculate_items_diff(
+    local_items: list[dict[str, Any]],
+    remote_items: list[dict[str, Any]] | None,
+    key_func: Callable[[dict[str, Any]], Any],
+    compare_fields: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Calculate differences between local and remote item lists.
+
+    Args:
+        local_items: Items from local YAML.
+        remote_items: Items from remote Pi-hole instance.
+        key_func: Function to extract unique key from an item.
+        compare_fields: Fields to compare for changes.
+
+    Returns:
+        Dictionary with 'add', 'change', and 'remove' keys.
+    """
+    remote_items = remote_items or []
+
+    local_by_key = {key_func(item): item for item in local_items}
+    remote_by_key = {key_func(item): item for item in remote_items}
+
+    local_keys = set(local_by_key.keys())
+    remote_keys = set(remote_by_key.keys())
+
+    to_add_keys = local_keys - remote_keys
+    to_remove_keys = remote_keys - local_keys
+    common_keys = local_keys & remote_keys
+
+    to_change: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for key in common_keys:
+        local_item = local_by_key[key]
+        remote_item = remote_by_key[key]
+        if _items_differ(local_item, remote_item, compare_fields):
+            to_change.append((local_item, remote_item))
+
+    result: dict[str, dict[str, Any]] = {}
+
+    if to_add_keys:
+        result["add"] = {"local": [local_by_key[key] for key in to_add_keys]}
+
+    if to_change:
+        result["change"] = {
+            "local": [local for local, _ in to_change],
+            "remote": [remote for _, remote in to_change],
+        }
+
+    if to_remove_keys:
+        result["remove"] = {"remote": [remote_by_key[key] for key in to_remove_keys]}
+
+    return result
+
+
+def _items_differ(
+    local_item: dict[str, Any],
+    remote_item: dict[str, Any],
+    fields: list[str],
+) -> bool:
+    """Check if two items have any differing fields."""
+    for field in fields:
+        local_value = local_item.get(field)
+        remote_value = remote_item.get(field)
+
+        if field == "groups":
+            if _normalise_groups(local_value) != _normalise_groups(remote_value):
+                return True
+        elif field == "enabled":
+            local_enabled = bool(local_value) if local_value is not None else True
+            remote_enabled = bool(remote_value) if remote_value is not None else True
+            if local_enabled != remote_enabled:
+                return True
+        elif local_value != remote_value:
+            return True
+
+    return False
+
+
+def _normalise_groups(value: Any) -> frozenset[int]:
+    """Normalise groups value to a frozenset for comparison."""
+    if isinstance(value, list):
+        return frozenset(value)
+    if value is not None:
+        return frozenset([value])
+    return frozenset([0])
 
 
 def calculate_lists_diff(
@@ -11,113 +98,44 @@ def calculate_lists_diff(
 ) -> dict[str, dict[str, Any]]:
     """Calculate differences between local and remote Pi-hole lists.
 
-    Compares lists by address and detects additions, removals, and changes
-    to individual fields (type, comment, groups, enabled).
+    Compares lists by address and detects additions, removals, and changes.
 
     Args:
         local_lists: List configurations from local YAML.
         remote_lists: List configurations from remote Pi-hole instance.
 
     Returns:
-        Dictionary with 'add', 'change', and 'remove' keys containing
-        the respective differences. Empty dict if no differences.
+        Dictionary with 'add', 'change', and 'remove' keys.
     """
-    remote_lists = remote_lists or []
-
-    # Create address-based lookups for O(1) access
-    local_by_address = {item["address"]: item for item in local_lists}
-    remote_by_address = {item["address"]: item for item in remote_lists}
-
-    local_addresses = set(local_by_address.keys())
-    remote_addresses = set(remote_by_address.keys())
-
-    # Calculate differences using set operations
-    to_add_addresses = local_addresses - remote_addresses
-    to_remove_addresses = remote_addresses - local_addresses
-    common_addresses = local_addresses & remote_addresses
-
-    # Find items that need changes by comparing individual fields
-    to_change: list[tuple[dict[str, Any], dict[str, Any]]] = []
-
-    for addr in common_addresses:
-        local_item = local_by_address[addr]
-        remote_item = remote_by_address[addr]
-
-        if _list_items_differ(local_item, remote_item):
-            to_change.append((local_item, remote_item))
-
-    # Build result dictionary
-    result: dict[str, dict[str, Any]] = {}
-
-    if to_add_addresses:
-        result["add"] = {"local": [local_by_address[addr] for addr in to_add_addresses]}
-
-    if to_change:
-        result["change"] = {
-            "local": [local for local, _ in to_change],
-            "remote": [remote for _, remote in to_change],
-        }
-
-    if to_remove_addresses:
-        result["remove"] = {
-            "remote": [remote_by_address[addr] for addr in to_remove_addresses]
-        }
-
-    return result
+    return _calculate_items_diff(
+        local_lists,
+        remote_lists,
+        key_func=lambda item: item["address"],
+        compare_fields=["type", "comment", "groups", "enabled"],
+    )
 
 
-def _list_items_differ(local_item: dict[str, Any], remote_item: dict[str, Any]) -> bool:
-    """Check if two list items have any differing fields.
+def calculate_domains_diff(
+    local_domains: list[dict[str, Any]],
+    remote_domains: list[dict[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    """Calculate differences between local and remote Pi-hole domains.
+
+    Compares domains by (domain, type, kind) composite key.
 
     Args:
-        local_item: Local list item configuration.
-        remote_item: Remote list item configuration.
+        local_domains: Domain configurations from local YAML.
+        remote_domains: Domain configurations from remote Pi-hole instance.
 
     Returns:
-        True if any field differs, False otherwise.
+        Dictionary with 'add', 'change', and 'remove' keys.
     """
-    fields_to_check = ["type", "comment", "groups", "enabled"]
-
-    for field in fields_to_check:
-        local_value = local_item.get(field)
-        remote_value = remote_item.get(field)
-
-        if field == "groups":
-            # Normalise groups to sets for comparison (order doesn't matter)
-            local_groups = _normalise_groups(local_value)
-            remote_groups = _normalise_groups(remote_value)
-            if local_groups != remote_groups:
-                return True
-
-        elif field == "enabled":
-            # Normalise boolean values (default to True)
-            local_enabled = bool(local_value) if local_value is not None else True
-            remote_enabled = bool(remote_value) if remote_value is not None else True
-            if local_enabled != remote_enabled:
-                return True
-
-        else:
-            # Direct comparison for type and comment
-            if local_value != remote_value:
-                return True
-
-    return False
-
-
-def _normalise_groups(value: Any) -> frozenset[int]:
-    """Normalise groups value to a frozenset for comparison.
-
-    Args:
-        value: Groups value (list, single int, or None).
-
-    Returns:
-        Frozenset of group IDs.
-    """
-    if isinstance(value, list):
-        return frozenset(value)
-    if value is not None:
-        return frozenset([value])
-    return frozenset([0])
+    return _calculate_items_diff(
+        local_domains,
+        remote_domains,
+        key_func=lambda item: (item["domain"], item["type"], item["kind"]),
+        compare_fields=["comment", "groups", "enabled"],
+    )
 
 
 def calculate_config_diff(
@@ -128,8 +146,6 @@ def calculate_config_diff(
     """Recursively calculate differences between local and remote configurations.
 
     Only keys present in local configuration are considered for comparison.
-    This allows partial configuration management where only specified keys
-    are synchronised.
 
     Args:
         local_config: Local configuration (source of truth).
@@ -172,14 +188,7 @@ def calculate_config_diff(
 
 
 def _make_hashable(item: Any) -> Any:
-    """Convert nested structures to hashable types for comparison.
-
-    Args:
-        item: Value to convert (dict, list, or primitive).
-
-    Returns:
-        Hashable representation of the item.
-    """
+    """Convert nested structures to hashable types for comparison."""
     if isinstance(item, dict):
         return frozenset((k, _make_hashable(v)) for k, v in item.items())
     if isinstance(item, list):

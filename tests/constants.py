@@ -36,9 +36,28 @@ SAMPLE_DNS_CNAMES = [
 
 # Sample list configuration for tests
 SAMPLE_LIST = {
-    "address": "https://example.com/list.txt",
+    "address": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
     "type": "block",
-    "comment": "Test list",
+    "comment": "Migrated from /etc/pihole/adlists.list",
+    "groups": [0],
+    "enabled": True,
+}
+
+# Sample domain configuration for tests
+SAMPLE_DOMAIN = {
+    "domain": "blocked.example.com",
+    "type": "deny",
+    "kind": "exact",
+    "comment": "Test domain",
+    "groups": [0],
+    "enabled": True,
+}
+
+SAMPLE_DOMAIN_REGEX = {
+    "domain": r".*\.ads\..*",
+    "type": "deny",
+    "kind": "regex",
+    "comment": "Block ads subdomains",
     "groups": [0],
     "enabled": True,
 }
