@@ -29,3 +29,9 @@ instances:
             target: nas.test
           - name: grafana.test
             target: gateway.test
+    lists:
+      - address: "https://example.com/list.txt"
+        type: "block"
+        comment: "Test list"
+        groups: [0]
+        enabled: True

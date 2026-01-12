@@ -1,13 +1,16 @@
-"""Test setup and fixtures for ConfigHole."""
+"""Test fixtures and setup for ConfigHole."""
+
+from __future__ import annotations
 
 import os
 import subprocess
 import time
+from typing import TYPE_CHECKING
 
 import pytest
 import requests
 
-from .constants import (
+from tests.constants import (
     AUTH_TIMEOUT,
     CONTAINER_STARTUP_TIMEOUT,
     DOCKER_COMPOSE_FILE,
@@ -19,54 +22,60 @@ from .constants import (
     REQUEST_TIMEOUT,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
 
 def is_pihole_ready() -> bool:
-    """Check if Pi-hole API is ready."""
+    """Check if Pi-hole API is ready and accepting connections."""
     try:
-        # Test authentication
-        auth_response = requests.post(
+        response = requests.post(
             PIHOLE_AUTH_URL,
             json={"password": PIHOLE_TEST_PASSWORD},
             timeout=REQUEST_TIMEOUT,
         )
-        if auth_response.status_code == HTTP_OK:
-            auth_data = auth_response.json()
-            return auth_data.get("session", {}).get("valid", False)
-        return False
+        if response.status_code == HTTP_OK:
+            data = response.json()
+            return data.get("session", {}).get("valid", False)
     except Exception:
-        return False
+        pass
+    return False
+
+
+def get_project_dir() -> str:
+    """Get the project root directory."""
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(test_dir)
+
+
+def cleanup_container() -> None:
+    """Stop and remove the Pi-hole test container."""
+    try:
+        print("Cleaning up Pi-hole test container...")
+        subprocess.run(
+            ["docker-compose", "-f", DOCKER_COMPOSE_FILE, "down", "-v"],
+            cwd=get_project_dir(),
+            check=False,
+            capture_output=True,
+        )
+        print("Pi-hole test container cleaned up")
+    except Exception as e:
+        print(f"Warning: Container cleanup failed: {e}")
 
 
 @pytest.fixture(scope="session")
-def pihole_container():
-    """Ensure Pi-hole container is running for testing."""
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    project_dir = os.path.dirname(test_dir)
+def pihole_container() -> Generator[str, None, None]:
+    """Ensure Pi-hole container is running for integration tests."""
+    project_dir = get_project_dir()
 
-    def cleanup_container():
-        """Cleanup function to ensure container is always removed."""
-        try:
-            print("Cleaning up Pi-hole test container...")
-            subprocess.run(
-                ["docker-compose", "-f", DOCKER_COMPOSE_FILE, "down", "-v"],
-                cwd=project_dir,
-                check=False,
-                capture_output=True,
-            )
-            print("Pi-hole test container cleaned up successfully")
-        except Exception as e:
-            print(f"Warning: Failed to clean up Docker container: {e}")
-
-    # Check if Pi-hole is already accessible
+    # Check if already running
     if is_pihole_ready():
         yield "pihole-test"
-        # Always cleanup after tests, even if container was already running
         cleanup_container()
         return
 
-    # Try to start the container if it's not running
+    # Start the container
     try:
-        # Start container with docker-compose
         subprocess.run(
             ["docker-compose", "-f", DOCKER_COMPOSE_FILE, "up", "-d"],
             cwd=project_dir,
@@ -75,54 +84,50 @@ def pihole_container():
         )
 
         # Wait for Pi-hole to be ready
-        max_wait = CONTAINER_STARTUP_TIMEOUT
-        wait_time = 0
-
-        while wait_time < max_wait:
+        elapsed = 0
+        while elapsed < CONTAINER_STARTUP_TIMEOUT:
             if is_pihole_ready():
-                # Give it more time to fully initialise
                 time.sleep(FINAL_WAIT)
                 yield "pihole-test"
-                # Cleanup after tests complete
                 cleanup_container()
                 return
 
             time.sleep(POLL_INTERVAL)
-            wait_time += POLL_INTERVAL
+            elapsed += POLL_INTERVAL
 
-        # If we get here, Pi-hole failed to start
-        cleanup_container()  # Clean up failed container
-        pytest.fail(f"Pi-hole API failed to start within {max_wait}s")
+        cleanup_container()
+        pytest.fail(f"Pi-hole failed to start within {CONTAINER_STARTUP_TIMEOUT}s")
 
     except subprocess.CalledProcessError as e:
-        cleanup_container()  # Clean up on error
+        cleanup_container()
         pytest.skip(f"Failed to start Pi-hole container: {e}")
+
     except Exception:
-        cleanup_container()  # Clean up on any other error
+        cleanup_container()
         raise
 
 
 @pytest.fixture(scope="session")
-def pihole_session(pihole_container):
-    """Create a reusable Pi-hole session to avoid rate limiting."""
-    # Wait for the container to be ready first
+def pihole_session(
+    pihole_container: str,
+) -> Generator[tuple[requests.Session, str], None, None]:
+    """Create a reusable authenticated Pi-hole session."""
     _ = pihole_container
 
     session = requests.Session()
     session.verify = False
 
-    # Authenticate once for the entire test session
-    auth_response = session.post(
+    response = session.post(
         PIHOLE_AUTH_URL,
         json={"password": PIHOLE_TEST_PASSWORD},
         timeout=AUTH_TIMEOUT,
     )
 
-    if auth_response.status_code != HTTP_OK:
-        pytest.fail(f"Failed to authenticate: {auth_response.status_code}")
+    if response.status_code != HTTP_OK:
+        pytest.fail(f"Authentication failed: {response.status_code}")
 
-    auth_data = auth_response.json()
-    session_info = auth_data.get("session", {})
+    data = response.json()
+    session_info = data.get("session", {})
 
     if not session_info.get("valid"):
         pytest.fail("Authentication failed - invalid session")
@@ -131,12 +136,10 @@ def pihole_session(pihole_container):
     if not session_id:
         pytest.fail("No session ID received")
 
-    # Store session ID for cleanup
     session.headers.update({"X-FTL-SID": session_id})
 
     yield session, session_id
 
-    # Clean up session
     try:
         session.delete(PIHOLE_AUTH_URL, timeout=REQUEST_TIMEOUT)
     except Exception:
@@ -145,36 +148,12 @@ def pihole_session(pihole_container):
         session.close()
 
 
-def pytest_sessionfinish(session, exitstatus):
-    """Cleanup function that runs at the end of the test session."""
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    project_dir = os.path.dirname(test_dir)
-
-    try:
-        print("Final cleanup: Stopping Pi-hole test container...")
-        subprocess.run(
-            ["docker-compose", "-f", DOCKER_COMPOSE_FILE, "down", "-v"],
-            cwd=project_dir,
-            check=False,
-            capture_output=True,
-        )
-        print("Final cleanup completed")
-    except Exception as e:
-        print(f"Warning: Final cleanup failed: {e}")
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Clean up after all tests complete."""
+    cleanup_container()
 
 
-def pytest_keyboard_interrupt(excinfo):
-    """Cleanup function that runs when tests are interrupted with Ctrl+C."""
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    project_dir = os.path.dirname(test_dir)
-
-    try:
-        print("\nInterrupt cleanup: Stopping Pi-hole test container...")
-        subprocess.run(
-            ["docker-compose", "-f", DOCKER_COMPOSE_FILE, "down", "-v"],
-            cwd=project_dir,
-            check=False,
-        )
-        print("Interrupt cleanup completed")
-    except Exception as e:
-        print(f"Warning: Interrupt cleanup failed: {e}")
+def pytest_keyboard_interrupt(excinfo: BaseException) -> None:
+    """Clean up when tests are interrupted."""
+    print("\nInterrupt: Cleaning up...")
+    cleanup_container()

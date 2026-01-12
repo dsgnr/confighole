@@ -1,4 +1,6 @@
-"""Unit tests for ConfigHole utility functions"""
+"""Unit tests for utility functions."""
+
+from __future__ import annotations
 
 import os
 import tempfile
@@ -23,100 +25,227 @@ from confighole.utils.helpers import (
     normalise_dns_hosts,
     validate_instance_config,
 )
-
-from .constants import TEST_DNS_CNAMES, TEST_DNS_HOSTS, TEST_DNS_UPSTREAMS
+from tests.constants import (
+    SAMPLE_DNS_CNAMES,
+    SAMPLE_DNS_HOSTS,
+    SAMPLE_DNS_UPSTREAMS,
+    SAMPLE_LIST,
+)
 
 
 @pytest.mark.unit
-class TestConfigUtils:
-    """Unit tests for configuration utilities."""
+class TestPasswordResolution:
+    """Tests for password resolution from various sources."""
 
-    def test_merge_global_settings_empty(self):
-        """Test merging with empty global settings."""
+    def test_direct_password(self):
+        """Direct password value is returned as-is."""
+        config = {"password": "my-secret"}
+        assert resolve_password(config) == "my-secret"
+
+    def test_env_var_syntax(self):
+        """Password with ${VAR} syntax resolves from environment."""
+        os.environ["TEST_PW"] = "env-secret"
+        try:
+            config = {"password": "${TEST_PW}"}
+            assert resolve_password(config) == "env-secret"
+        finally:
+            del os.environ["TEST_PW"]
+
+    def test_env_var_missing(self):
+        """Missing environment variable returns None."""
+        config = {"password": "${NONEXISTENT_VAR}"}
+        assert resolve_password(config) is None
+
+    def test_password_env_field(self):
+        """password_env field resolves from named environment variable."""
+        os.environ["MY_PW_VAR"] = "another-secret"
+        try:
+            config = {"password_env": "MY_PW_VAR"}
+            assert resolve_password(config) == "another-secret"
+        finally:
+            del os.environ["MY_PW_VAR"]
+
+    def test_password_env_missing(self):
+        """Missing password_env variable returns None."""
+        config = {"password_env": "MISSING_VAR"}
+        assert resolve_password(config) is None
+
+    def test_no_password_configured(self):
+        """No password configuration returns None."""
+        config = {"name": "test"}
+        assert resolve_password(config) is None
+
+    def test_numeric_password_converted_to_string(self):
+        """Numeric password is converted to string."""
+        config = {"password": 12345}
+        assert resolve_password(config) == "12345"
+
+
+@pytest.mark.unit
+class TestConfigMerging:
+    """Tests for global settings merging into instances."""
+
+    def test_empty_global_settings(self):
+        """Empty global settings don't affect instances."""
         config = {
             "global": {},
             "instances": [{"name": "test", "base_url": "http://test"}],
         }
-
         result = merge_global_settings(config)
 
         assert len(result) == 1
         assert result[0]["name"] == "test"
-        assert result[0]["base_url"] == "http://test"
 
-    def test_merge_global_settings_with_overrides(self):
-        """Test merging with instance overrides."""
+    def test_global_settings_applied(self):
+        """Global settings are applied to instances."""
         config = {
             "global": {"timeout": 30, "verify_ssl": False},
-            "instances": [
-                {
-                    "name": "test",
-                    "base_url": "http://test",
-                    "timeout": 60,  # Override global
-                }
-            ],
+            "instances": [{"name": "test", "base_url": "http://test"}],
         }
-
         result = merge_global_settings(config)
 
-        assert result[0]["timeout"] == 60  # Instance override
-        assert result[0]["verify_ssl"] is False  # From global
+        assert result[0]["timeout"] == 30
+        assert result[0]["verify_ssl"] is False
 
-    def test_get_global_daemon_settings_defaults(self):
-        """Test getting daemon settings with defaults."""
-        config = {"global": {}}
+    def test_instance_overrides_global(self):
+        """Instance settings override global settings."""
+        config = {
+            "global": {"timeout": 30},
+            "instances": [{"name": "test", "base_url": "http://test", "timeout": 60}],
+        }
+        result = merge_global_settings(config)
 
-        result = get_global_daemon_settings(config)
+        assert result[0]["timeout"] == 60
+
+    def test_daemon_settings_excluded(self):
+        """Daemon-only settings are not merged into instances."""
+        config = {
+            "global": {"daemon_mode": True, "daemon_interval": 600, "timeout": 30},
+            "instances": [{"name": "test", "base_url": "http://test"}],
+        }
+        result = merge_global_settings(config)
+
+        assert "daemon_mode" not in result[0]
+        assert "daemon_interval" not in result[0]
+        assert result[0]["timeout"] == 30
+
+    def test_no_instances(self):
+        """Empty instances list returns empty list."""
+        config = {"global": {"timeout": 30}, "instances": []}
+        assert merge_global_settings(config) == []
+
+
+@pytest.mark.unit
+class TestDaemonSettings:
+    """Tests for daemon settings extraction."""
+
+    def test_defaults_when_empty(self):
+        """Default values are returned when global is empty."""
+        result = get_global_daemon_settings({"global": {}})
 
         assert result["daemon_mode"] is False
         assert result["daemon_interval"] == 300
         assert result["verbosity"] == 1
         assert result["dry_run"] is False
 
-    def test_resolve_password_env_var_syntax(self):
-        """Test resolving password with ${VAR} syntax."""
-        os.environ["TEST_PASSWORD"] = "secret123"
+    def test_defaults_when_missing(self):
+        """Default values are returned when global is missing."""
+        result = get_global_daemon_settings({})
 
-        try:
-            instance_config = {"password": "${TEST_PASSWORD}"}
-            result = resolve_password(instance_config)
-            assert result == "secret123"
-        finally:
-            del os.environ["TEST_PASSWORD"]
+        assert result["daemon_mode"] is False
+        assert result["daemon_interval"] == 300
 
-    def test_resolve_password_env_var_missing(self):
-        """Test resolving password with missing env var."""
-        instance_config = {"password": "${NONEXISTENT_VAR}"}
-        result = resolve_password(instance_config)
-        assert result is None
+    def test_custom_values(self):
+        """Custom values are extracted correctly."""
+        config = {
+            "global": {
+                "daemon_mode": True,
+                "daemon_interval": 600,
+                "verbosity": 2,
+                "dry_run": True,
+            }
+        }
+        result = get_global_daemon_settings(config)
 
-    def test_resolve_password_password_env(self):
-        """Test resolving password with password_env."""
-        os.environ["MY_PASSWORD"] = "secret456"
-
-        try:
-            instance_config = {"password_env": "MY_PASSWORD"}
-            result = resolve_password(instance_config)
-            assert result == "secret456"
-        finally:
-            del os.environ["MY_PASSWORD"]
+        assert result["daemon_mode"] is True
+        assert result["daemon_interval"] == 600
+        assert result["verbosity"] == 2
+        assert result["dry_run"] is True
 
 
 @pytest.mark.unit
-class TestDiffUtils:
-    """Unit tests for diff utilities."""
+class TestYamlLoading:
+    """Tests for YAML configuration loading."""
 
-    def test_calculate_config_diff_no_changes(self):
-        """Test diff calculation with no changes."""
-        local = {"dns": {"upstreams": ["1.1.1.1"]}}
-        remote = {"dns": {"upstreams": ["1.1.1.1"]}}
+    def test_missing_file_exits(self):
+        """Missing file causes system exit."""
+        with pytest.raises(SystemExit):
+            load_yaml_config("nonexistent.yaml")
 
-        result = calculate_config_diff(local, remote)
+    def test_invalid_yaml_exits(self):
+        """Invalid YAML causes system exit."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write("invalid: yaml: [unclosed")
+            temp_file = f.name
 
-        assert result == {}
+        try:
+            with pytest.raises(SystemExit):
+                load_yaml_config(temp_file)
+        finally:
+            os.unlink(temp_file)
 
-    def test_calculate_config_diff_with_changes(self):
-        """Test diff calculation with changes."""
+    def test_non_dict_yaml_exits(self):
+        """YAML that isn't a dict causes system exit."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write("- item1\n- item2")
+            temp_file = f.name
+
+        try:
+            with pytest.raises(SystemExit):
+                load_yaml_config(temp_file)
+        finally:
+            os.unlink(temp_file)
+
+
+@pytest.mark.unit
+class TestInstanceValidation:
+    """Tests for instance configuration validation."""
+
+    def test_valid_config_passes(self):
+        """Valid configuration doesn't raise."""
+        config = {"name": "test", "base_url": "http://test", "password": "secret"}
+        validate_instance_config(config)
+
+    def test_missing_base_url_raises(self):
+        """Missing base_url raises ConfigurationError."""
+        config = {"name": "test", "password": "secret"}
+        with pytest.raises(ConfigurationError, match="missing required 'base_url'"):
+            validate_instance_config(config)
+
+    def test_empty_base_url_raises(self):
+        """Empty base_url raises ConfigurationError."""
+        config = {"name": "test", "base_url": "", "password": "secret"}
+        with pytest.raises(ConfigurationError, match="missing required 'base_url'"):
+            validate_instance_config(config)
+
+    def test_missing_password_raises(self):
+        """Missing password raises ConfigurationError."""
+        config = {"name": "test", "base_url": "http://test"}
+        with pytest.raises(ConfigurationError, match="has no password configured"):
+            validate_instance_config(config)
+
+
+@pytest.mark.unit
+class TestConfigDiff:
+    """Tests for configuration diff calculation."""
+
+    def test_identical_configs_no_diff(self):
+        """Identical configurations produce empty diff."""
+        config = {"dns": {"upstreams": ["1.1.1.1"]}}
+        assert calculate_config_diff(config, config) == {}
+
+    def test_different_values_detected(self):
+        """Different values are detected."""
         local = {"dns": {"upstreams": ["1.1.1.1"]}}
         remote = {"dns": {"upstreams": ["8.8.8.8"]}}
 
@@ -126,278 +255,233 @@ class TestDiffUtils:
         assert result["dns.upstreams"]["local"] == ["1.1.1.1"]
         assert result["dns.upstreams"]["remote"] == ["8.8.8.8"]
 
-    def test_calculate_config_diff_nested(self):
-        """Test diff calculation with nested changes."""
-        local = {"dns": {"domain": {"name": "test", "local": True}}}
-        remote = {"dns": {"domain": {"name": "prod", "local": False}}}
+    def test_nested_changes_detected(self):
+        """Nested changes are detected with dotted paths."""
+        local = {"dns": {"domain": {"name": "test"}}}
+        remote = {"dns": {"domain": {"name": "prod"}}}
 
         result = calculate_config_diff(local, remote)
 
         assert "dns.domain.name" in result
-        assert "dns.domain.local" in result
 
-    def test_convert_diff_to_nested_dict(self):
-        """Test converting flat diff to nested dict."""
-        diff = {
-            "dns.upstreams": {"local": ["1.1.1.1"], "remote": ["8.8.8.8"]},
-            "dns.queryLogging": {"local": True, "remote": False},
-        }
+    def test_type_mismatch_detected(self):
+        """Type mismatches are detected."""
+        local = {"dns": {"upstreams": ["1.1.1.1"]}}
+        remote = {"dns": {"upstreams": "1.1.1.1"}}
 
-        result = convert_diff_to_nested_dict(diff)
+        result = calculate_config_diff(local, remote)
 
-        assert "dns" in result
-        assert result["dns"]["upstreams"] == ["1.1.1.1"]
-        assert result["dns"]["queryLogging"] is True
+        assert "dns.upstreams" in result
 
-    def test_calculate_lists_diff_no_changes(self):
-        """Test lists diff calculation with no changes."""
-        local_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "deny",
-                "comment": "Test list 1",
-                "groups": [0],
-                "enabled": True,
-            }
-        ]
-        remote_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "deny",
-                "comment": "Test list 1",
-                "groups": [0],
-                "enabled": True,
-            }
-        ]
+    def test_none_remote_handled(self):
+        """None remote config is handled gracefully."""
+        local = {"dns": {"upstreams": ["1.1.1.1"]}}
 
-        result = calculate_lists_diff(local_lists, remote_lists)
+        result = calculate_config_diff(local, None)
+
+        assert "dns.upstreams" in result
+
+    def test_empty_list_vs_populated(self):
+        """Empty list vs populated list is detected."""
+        local = {"dns": {"upstreams": []}}
+        remote = {"dns": {"upstreams": ["1.1.1.1"]}}
+
+        result = calculate_config_diff(local, remote)
+
+        assert "dns.upstreams" in result
+        assert result["dns.upstreams"]["local"] == []
+
+    def test_list_order_ignored(self):
+        """List order doesn't affect comparison for simple values."""
+        local = {"dns": {"upstreams": ["1.1.1.1", "8.8.8.8"]}}
+        remote = {"dns": {"upstreams": ["8.8.8.8", "1.1.1.1"]}}
+
+        result = calculate_config_diff(local, remote)
 
         assert result == {}
 
-    def test_calculate_lists_diff_add_remove(self):
-        """Test lists diff calculation with additions and removals."""
-        local_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "deny",
-                "comment": "Test list 1",
-                "groups": [0],
-                "enabled": True,
-            }
-        ]
-        remote_lists = [
-            {
-                "address": "https://example.com/list2.txt",
-                "type": "allow",
-                "comment": "Test list 2",
-                "groups": [0],
-                "enabled": True,
-            }
-        ]
 
-        result = calculate_lists_diff(local_lists, remote_lists)
+@pytest.mark.unit
+class TestListsDiff:
+    """Tests for Pi-hole lists diff calculation."""
 
-        assert "add" in result
-        assert "remove" in result
-        assert len(result["add"]["local"]) == 1
-        assert len(result["remove"]["remote"]) == 1
-        assert result["add"]["local"][0]["address"] == "https://example.com/list1.txt"
-        assert (
-            result["remove"]["remote"][0]["address"] == "https://example.com/list2.txt"
-        )
+    def test_identical_lists_no_diff(self):
+        """Identical lists produce empty diff."""
+        lists = [SAMPLE_LIST]
+        assert calculate_lists_diff(lists, lists) == {}
 
-    def test_calculate_lists_diff_field_changes(self):
-        """Test lists diff calculation with individual field changes."""
-        local_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "deny",
-                "comment": "Updated comment",
-                "groups": [0, 1],
-                "enabled": False,
-            }
-        ]
-        remote_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "allow",  # Different type
-                "comment": "Original comment",  # Different comment
-                "groups": [0],  # Different groups
-                "enabled": True,  # Different enabled state
-            }
-        ]
+    def test_addition_detected(self):
+        """New list in local is detected as addition."""
+        local = [SAMPLE_LIST]
+        remote: list[dict] = []
 
-        result = calculate_lists_diff(local_lists, remote_lists)
-
-        assert "change" in result
-        assert len(result["change"]["local"]) == 1
-        assert len(result["change"]["remote"]) == 1
-        assert result["change"]["local"][0]["type"] == "deny"
-        assert result["change"]["remote"][0]["type"] == "allow"
-
-    def test_calculate_lists_diff_comment_only_change(self):
-        """Test lists diff calculation with only comment changes."""
-        local_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "deny",
-                "comment": "New comment",
-                "groups": [0],
-                "enabled": True,
-            }
-        ]
-        remote_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "deny",
-                "comment": "Old comment",
-                "groups": [0],
-                "enabled": True,
-            }
-        ]
-
-        result = calculate_lists_diff(local_lists, remote_lists)
-
-        assert "change" in result
-        assert len(result["change"]["local"]) == 1
-
-    def test_calculate_lists_diff_groups_normalisation(self):
-        """Test lists diff calculation with groups normalisation."""
-        local_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "deny",
-                "comment": "Test",
-                "groups": [0, 1],  # List format
-                "enabled": True,
-            }
-        ]
-        remote_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "deny",
-                "comment": "Test",
-                "groups": [1, 0],  # Same groups, different order
-                "enabled": True,
-            }
-        ]
-
-        result = calculate_lists_diff(local_lists, remote_lists)
-
-        # Should not detect changes since groups are the same (just different order)
-        assert result == {}
-
-    def test_calculate_lists_diff_enabled_normalisation(self):
-        """Test lists diff calculation with enabled field normalisation."""
-        local_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "deny",
-                "comment": "Test",
-                "groups": [0],
-                "enabled": True,
-            }
-        ]
-        remote_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "deny",
-                "comment": "Test",
-                "groups": [0],
-                "enabled": 1,  # Truthy value
-            }
-        ]
-
-        result = calculate_lists_diff(local_lists, remote_lists)
-
-        # Should not detect changes since both are truthy
-        assert result == {}
-
-    def test_calculate_lists_diff_empty_remote(self):
-        """Test lists diff calculation with empty remote lists."""
-        local_lists = [
-            {
-                "address": "https://example.com/list1.txt",
-                "type": "deny",
-                "comment": "Test",
-                "groups": [0],
-                "enabled": True,
-            }
-        ]
-        remote_lists = []
-
-        result = calculate_lists_diff(local_lists, remote_lists)
+        result = calculate_lists_diff(local, remote)
 
         assert "add" in result
         assert len(result["add"]["local"]) == 1
         assert "remove" not in result
-        assert "change" not in result
+
+    def test_removal_detected(self):
+        """List only in remote is detected as removal."""
+        local: list[dict] = []
+        remote = [SAMPLE_LIST]
+
+        result = calculate_lists_diff(local, remote)
+
+        assert "remove" in result
+        assert len(result["remove"]["remote"]) == 1
+        assert "add" not in result
+
+    def test_change_detected(self):
+        """Changed list properties are detected."""
+        local = [{**SAMPLE_LIST, "comment": "Updated"}]
+        remote = [SAMPLE_LIST]
+
+        result = calculate_lists_diff(local, remote)
+
+        assert "change" in result
+        assert len(result["change"]["local"]) == 1
+
+    def test_groups_order_ignored(self):
+        """Group order doesn't affect comparison."""
+        local = [{**SAMPLE_LIST, "groups": [0, 1]}]
+        remote = [{**SAMPLE_LIST, "groups": [1, 0]}]
+
+        assert calculate_lists_diff(local, remote) == {}
+
+    def test_enabled_normalisation(self):
+        """Truthy enabled values are treated as equal."""
+        local = [{**SAMPLE_LIST, "enabled": True}]
+        remote = [{**SAMPLE_LIST, "enabled": 1}]
+
+        assert calculate_lists_diff(local, remote) == {}
+
+    def test_none_remote_handled(self):
+        """None remote lists handled as empty."""
+        local = [SAMPLE_LIST]
+
+        result = calculate_lists_diff(local, None)
+
+        assert "add" in result
 
 
 @pytest.mark.unit
-class TestHelperUtils:
-    """Unit tests for helper utilities."""
+class TestDnsNormalisation:
+    """Tests for DNS record normalisation."""
 
-    def test_normalise_dns_hosts_list_format(self):
-        """Test normalising DNS hosts from list format."""
-        hosts = [
-            {"ip": "192.168.1.1", "host": "gateway.test"},
-            {"ip": "192.168.1.10", "host": "nas.test"},
-        ]
+    def test_hosts_dict_format_unchanged(self):
+        """Dict format hosts are returned unchanged."""
+        hosts = [{"ip": "192.168.1.1", "host": "test.local"}]
+        assert normalise_dns_hosts(hosts) == hosts
 
-        result = normalise_dns_hosts(hosts)
-
-        assert result == hosts  # Should be unchanged
-
-    def test_normalise_dns_hosts_string_format(self):
-        """Test normalising DNS hosts from string format."""
-        hosts = ["192.168.1.1 gateway.test"]
+    def test_hosts_string_format_parsed(self):
+        """String format hosts are parsed to dicts."""
+        hosts = ["192.168.1.1 test.local"]
 
         result = normalise_dns_hosts(hosts)
 
-        expected = [{"ip": "192.168.1.1", "host": "gateway.test"}]
-        assert result == expected
+        assert result == [{"ip": "192.168.1.1", "host": "test.local"}]
 
-    def test_normalise_cname_records_list_format(self):
-        """Test normalising CNAME records from list format."""
-        cnames = [
-            {"name": "plex.test", "target": "nas.test"},
-            {"name": "grafana.test", "target": "gateway.test"},
-        ]
+    def test_hosts_multiple_spaces_handled(self):
+        """Multiple spaces in host string are handled."""
+        hosts = ["192.168.1.1   test.local"]
+
+        result = normalise_dns_hosts(hosts)
+
+        assert result[0]["host"] == "test.local"
+
+    def test_hosts_missing_key_raises(self):
+        """Dict missing required key raises error."""
+        hosts = [{"ip": "192.168.1.1"}]
+
+        with pytest.raises(ConfigurationError):
+            normalise_dns_hosts(hosts)
+
+    def test_hosts_invalid_format_raises(self):
+        """Invalid format raises error."""
+        with pytest.raises(ConfigurationError):
+            normalise_dns_hosts([123])
+
+        with pytest.raises(ConfigurationError):
+            normalise_dns_hosts(["192.168.1.1"])  # No space
+
+    def test_cnames_dict_format_unchanged(self):
+        """Dict format CNAMEs are returned unchanged."""
+        cnames = [{"name": "alias.test", "target": "real.test"}]
+        assert normalise_cname_records(cnames) == cnames
+
+    def test_cnames_string_format_parsed(self):
+        """String format CNAMEs are parsed to dicts."""
+        cnames = ["alias.test,real.test"]
 
         result = normalise_cname_records(cnames)
 
-        assert result == cnames  # Should be unchanged
+        assert result == [{"name": "alias.test", "target": "real.test"}]
 
-    def test_normalise_cname_records_string_format(self):
-        """Test normalising CNAME records from string format."""
-        cnames = ["plex.test,nas.test"]
+    def test_cnames_whitespace_stripped(self):
+        """Whitespace in CNAME strings is stripped."""
+        cnames = [" alias.test , real.test "]
 
         result = normalise_cname_records(cnames)
 
-        expected = [{"name": "plex.test", "target": "nas.test"}]
-        assert result == expected
+        assert result == [{"name": "alias.test", "target": "real.test"}]
 
-    def test_normalise_configuration(self):
-        """Test normalising complete DNS configuration."""
+    def test_cnames_missing_key_raises(self):
+        """Dict missing required key raises error."""
+        cnames = [{"name": "alias.test"}]
+
+        with pytest.raises(ConfigurationError):
+            normalise_cname_records(cnames)
+
+    def test_cnames_invalid_format_raises(self):
+        """Invalid format raises error."""
+        with pytest.raises(ConfigurationError):
+            normalise_cname_records([123])
+
+        with pytest.raises(ConfigurationError):
+            normalise_cname_records(["alias.test"])  # No comma
+
+
+@pytest.mark.unit
+class TestConfigNormalisation:
+    """Tests for full configuration normalisation."""
+
+    def test_dns_section_normalised(self):
+        """DNS section is normalised correctly."""
         config = {
             "dns": {
-                "upstreams": TEST_DNS_UPSTREAMS,
-                "hosts": TEST_DNS_HOSTS,
-                "cnameRecords": TEST_DNS_CNAMES,
+                "upstreams": SAMPLE_DNS_UPSTREAMS,
+                "hosts": SAMPLE_DNS_HOSTS,
+                "cnameRecords": SAMPLE_DNS_CNAMES,
             }
         }
 
         result = normalise_configuration(config)
 
-        assert "dns" in result
-        dns = result["dns"]
-        assert dns["upstreams"] == TEST_DNS_UPSTREAMS
-        assert dns["hosts"] == TEST_DNS_HOSTS
-        assert dns["cnameRecords"] == TEST_DNS_CNAMES
+        assert result["dns"]["hosts"] == SAMPLE_DNS_HOSTS
+        assert result["dns"]["cnameRecords"] == SAMPLE_DNS_CNAMES
+
+    def test_no_dns_section_unchanged(self):
+        """Config without DNS section is unchanged."""
+        config = {"other": "data"}
+        assert normalise_configuration(config) == config
+
+    def test_invalid_dns_section_unchanged(self):
+        """Non-dict DNS section is unchanged."""
+        config = {"dns": "not_a_dict"}
+        assert normalise_configuration(config) == config
+
+    def test_empty_config_returns_empty(self):
+        """Empty config returns empty dict."""
+        assert normalise_configuration({}) == {}
+
+
+@pytest.mark.unit
+class TestPiholeFormatConversion:
+    """Tests for converting to Pi-hole API format."""
 
     def test_hosts_to_pihole_format(self):
-        """Test converting hosts to Pi-hole format."""
+        """Hosts are converted to space-separated strings."""
         hosts = [
             {"ip": "192.168.1.1", "host": "gateway.test"},
             {"ip": "192.168.1.10", "host": "nas.test"},
@@ -405,11 +489,10 @@ class TestHelperUtils:
 
         result = hosts_to_pihole_format(hosts)
 
-        expected = ["192.168.1.1 gateway.test", "192.168.1.10 nas.test"]
-        assert result == expected
+        assert result == ["192.168.1.1 gateway.test", "192.168.1.10 nas.test"]
 
     def test_cnames_to_pihole_format(self):
-        """Test converting CNAMEs to Pi-hole format."""
+        """CNAMEs are converted to comma-separated strings."""
         cnames = [
             {"name": "plex.test", "target": "nas.test"},
             {"name": "grafana.test", "target": "gateway.test"},
@@ -417,127 +500,37 @@ class TestHelperUtils:
 
         result = cnames_to_pihole_format(cnames)
 
-        expected = ["plex.test,nas.test", "grafana.test,gateway.test"]
-        assert result == expected
-
-
-# Additional unit tests for better coverage
+        assert result == ["plex.test,nas.test", "grafana.test,gateway.test"]
 
 
 @pytest.mark.unit
-class TestConfigUtilsExtended:
-    """Extended unit tests for configuration utilities."""
+class TestDiffToNestedDict:
+    """Tests for converting flat diff to nested structure."""
 
-    def test_load_yaml_config_missing_file(self):
-        """Test loading non-existent YAML file."""
-        with pytest.raises(SystemExit):
-            load_yaml_config("nonexistent.yaml")
-
-    def test_load_yaml_config_invalid_yaml(self):
-        """Test loading invalid YAML file."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write("invalid: yaml: content: [")
-            temp_file = f.name
-
-        try:
-            with pytest.raises(SystemExit):  # Config loader calls sys.exit
-                load_yaml_config(temp_file)
-        finally:
-            os.unlink(temp_file)
-
-    def test_merge_global_settings_no_instances(self):
-        """Test merging with no instances."""
-        config = {"global": {"timeout": 30}, "instances": []}
-
-        result = merge_global_settings(config)
-
-        assert result == []
-
-    def test_get_global_daemon_settings_no_global(self):
-        """Test getting daemon settings with no global section."""
-        config = {}
-
-        result = get_global_daemon_settings(config)
-
-        assert result["daemon_mode"] is False
-        assert result["daemon_interval"] == 300
-        assert result["verbosity"] == 1
-        assert result["dry_run"] is False
-
-    def test_resolve_password_password_env_missing(self):
-        """Test resolving password with missing password_env."""
-        instance_config = {"password_env": "NONEXISTENT_PASSWORD"}
-        result = resolve_password(instance_config)
-        assert result is None
-
-    def test_resolve_password_no_password(self):
-        """Test resolving password with no password configured."""
-        instance_config = {"name": "test"}
-        result = resolve_password(instance_config)
-        assert result is None
-
-
-@pytest.mark.unit
-class TestValidationUtils:
-    """Unit tests for validation utilities."""
-
-    def test_validate_instance_config_valid(self):
-        """Test validating valid instance configuration."""
-        instance_config = {
-            "name": "test",
-            "base_url": "http://test",
-            "password": "secret",
+    def test_simple_conversion(self):
+        """Simple paths are converted correctly."""
+        diff = {
+            "dns.upstreams": {"local": ["1.1.1.1"], "remote": ["8.8.8.8"]},
         }
 
-        # Should not raise an exception
-        validate_instance_config(instance_config)
+        result = convert_diff_to_nested_dict(diff)
 
-    def test_validate_instance_config_missing_url(self):
-        """Test validating instance with missing base_url."""
-        instance_config = {"name": "test", "password": "test"}
+        assert result["dns"]["upstreams"] == ["1.1.1.1"]
 
-        with pytest.raises(ConfigurationError, match="missing required 'base_url'"):
-            validate_instance_config(instance_config)
+    def test_multiple_paths_merged(self):
+        """Multiple paths are merged correctly."""
+        diff = {
+            "dns.upstreams": {"local": ["1.1.1.1"], "remote": []},
+            "dns.queryLogging": {"local": True, "remote": False},
+        }
 
-    def test_validate_instance_config_empty_url(self):
-        """Test validating instance with empty base_url."""
-        instance_config = {"name": "test", "base_url": "", "password": "test"}
+        result = convert_diff_to_nested_dict(diff)
 
-        with pytest.raises(ConfigurationError, match="missing required 'base_url'"):
-            validate_instance_config(instance_config)
+        assert result["dns"]["upstreams"] == ["1.1.1.1"]
+        assert result["dns"]["queryLogging"] is True
 
-    def test_validate_instance_config_missing_password(self):
-        """Test validating instance with missing password."""
-        instance_config = {"name": "test", "base_url": "http://test"}
-
-        with pytest.raises(ConfigurationError, match="has no password configured"):
-            validate_instance_config(instance_config)
-
-
-@pytest.mark.unit
-class TestDiffUtilsExtended:
-    """Extended unit tests for diff utilities."""
-
-    def test_calculate_config_diff_type_mismatch(self):
-        """Test diff calculation with type mismatches."""
-        local = {"dns": {"upstreams": ["1.1.1.1"]}}
-        remote = {"dns": {"upstreams": "1.1.1.1"}}  # String instead of list
-
-        result = calculate_config_diff(local, remote)
-
-        assert "dns.upstreams" in result
-
-    def test_calculate_config_diff_none_remote(self):
-        """Test diff calculation with None remote config."""
-        local = {"dns": {"upstreams": ["1.1.1.1"]}}
-        remote = None
-
-        result = calculate_config_diff(local, remote)
-
-        assert "dns.upstreams" in result
-
-    def test_convert_diff_to_nested_dict_with_hosts(self):
-        """Test converting diff with hosts to Pi-hole format."""
+    def test_hosts_converted_to_pihole_format(self):
+        """Hosts are converted to Pi-hole string format."""
         diff = {
             "dns.hosts": {
                 "local": [{"ip": "192.168.1.1", "host": "test.local"}],
@@ -549,273 +542,104 @@ class TestDiffUtilsExtended:
 
         assert result["dns"]["hosts"] == ["192.168.1.1 test.local"]
 
-    def test_convert_diff_to_nested_dict_with_cnames(self):
-        """Test converting diff with CNAMEs to Pi-hole format."""
+    def test_cnames_converted_to_pihole_format(self):
+        """CNAMEs are converted to Pi-hole string format."""
         diff = {
             "dns.cnameRecords": {
-                "local": [{"name": "test.local", "target": "server.local"}],
+                "local": [{"name": "alias.test", "target": "real.test"}],
                 "remote": [],
             }
         }
 
         result = convert_diff_to_nested_dict(diff)
 
-        assert result["dns"]["cnameRecords"] == ["test.local,server.local"]
+        assert result["dns"]["cnameRecords"] == ["alias.test,real.test"]
 
 
 @pytest.mark.unit
-class TestHelperUtilsExtended:
-    """Extended unit tests for helper utilities."""
-
-    def test_normalise_dns_hosts_invalid_dict(self):
-        """Test normalising DNS hosts with invalid dict format."""
-        hosts = [{"ip": "192.168.1.1"}]  # Missing 'host' key
-
-        with pytest.raises(ConfigurationError):
-            normalise_dns_hosts(hosts)
-
-    def test_normalise_dns_hosts_invalid_format(self):
-        """Test normalising DNS hosts with invalid format."""
-        hosts = [123]  # Invalid type
-
-        with pytest.raises(ConfigurationError):
-            normalise_dns_hosts(hosts)
-
-    def test_normalise_dns_hosts_string_no_space(self):
-        """Test normalising DNS hosts with string without space."""
-        hosts = ["192.168.1.1"]  # No space separator
-
-        with pytest.raises(ConfigurationError):
-            normalise_dns_hosts(hosts)
-
-    def test_normalise_cname_records_invalid_dict(self):
-        """Test normalising CNAME records with invalid dict format."""
-        cnames = [{"name": "plex.test"}]  # Missing 'target' key
-
-        with pytest.raises(ConfigurationError):
-            normalise_cname_records(cnames)
-
-    def test_normalise_cname_records_invalid_format(self):
-        """Test normalising CNAME records with invalid format."""
-        cnames = [123]  # Invalid type
-
-        with pytest.raises(ConfigurationError):
-            normalise_cname_records(cnames)
-
-    def test_normalise_cname_records_string_no_comma(self):
-        """Test normalising CNAME records with string without comma."""
-        cnames = ["plex.test"]  # No comma separator
-
-        with pytest.raises(ConfigurationError):
-            normalise_cname_records(cnames)
-
-    def test_normalise_configuration_no_dns(self):
-        """Test normalising configuration without DNS section."""
-        config = {"other": "data"}
-
-        result = normalise_configuration(config)
-
-        assert result == config
-
-    def test_normalise_configuration_invalid_dns(self):
-        """Test normalising configuration with invalid DNS section."""
-        config = {"dns": "not_a_dict"}
-
-        result = normalise_configuration(config)
-
-        assert result == config
-
-
-@pytest.mark.unit
-class TestClientUtils:
-    """Unit tests for client utilities."""
-
-    def test_pihole_manager_init_no_password(self):
-        """Test PiHoleManager initialisation with no password."""
-        from confighole.core.client import PiHoleManager
-
-        with pytest.raises(ValueError, match="Password cannot be None or empty"):
-            PiHoleManager("http://test", "")
-
-    def test_pihole_manager_init_none_password(self):
-        """Test PiHoleManager initialisation with None password."""
-        from confighole.core.client import PiHoleManager
-
-        with pytest.raises(ValueError, match="Password cannot be None or empty"):
-            PiHoleManager("http://test", None)
-
-    def test_create_manager_invalid_config(self):
-        """Test creating manager with invalid configuration."""
-        from confighole.core.client import create_manager
-
-        instance_config = {"name": "test"}  # Missing required fields
-
-        result = create_manager(instance_config)
-
-        assert result is None
-
-    def test_create_manager_no_password(self):
-        """Test creating manager with no password."""
-        from confighole.core.client import create_manager
-
-        instance_config = {"name": "test", "base_url": "http://test"}
-
-        result = create_manager(instance_config)
-
-        assert result is None
-
-
-@pytest.mark.unit
-class TestTasksUtils:
-    """Unit tests for task utilities."""
+class TestTaskOperations:
+    """Tests for task operation functions."""
 
     def test_process_instances_invalid_operation(self):
-        """Test processing instances with invalid operation."""
+        """Invalid operation raises ValueError."""
         from confighole.utils.tasks import process_instances
 
-        instances = [{"name": "test"}]
-
         with pytest.raises(ValueError, match="Unknown operation"):
-            process_instances(instances, "invalid_operation")
+            process_instances([{"name": "test"}], "invalid")
 
     @patch("confighole.utils.tasks.create_manager")
-    def test_dump_instance_data_no_manager(self, mock_create_manager):
-        """Test dumping instance data when manager creation fails."""
+    def test_dump_returns_none_when_manager_fails(self, mock_create_manager):
+        """dump_instance_data returns None when manager creation fails."""
         from confighole.utils.tasks import dump_instance_data
 
         mock_create_manager.return_value = None
-        instance_config = {"name": "test", "base_url": "http://test"}
 
-        result = dump_instance_data(instance_config)
+        result = dump_instance_data({"name": "test", "base_url": "http://test"})
 
         assert result is None
 
-    @patch("confighole.utils.tasks.create_manager")
-    def test_diff_instance_config_no_local_config(self, mock_create_manager):
-        """Test diffing when no local config is present."""
+    def test_diff_returns_none_without_local_config(self):
+        """diff_instance_config returns None without local config."""
         from confighole.utils.tasks import diff_instance_config
 
-        instance_config = {"name": "test", "base_url": "http://test"}
-
-        result = diff_instance_config(instance_config)
+        result = diff_instance_config({"name": "test", "base_url": "http://test"})
 
         assert result is None
 
-    @patch("confighole.utils.tasks.create_manager")
-    def test_sync_instance_config_no_local_config(self, mock_create_manager):
-        """Test syncing when no local config is present."""
+    def test_sync_config_returns_none_without_local_config(self):
+        """sync_instance_config returns None without local config."""
         from confighole.utils.tasks import sync_instance_config
 
-        instance_config = {"name": "test", "base_url": "http://test"}
+        result = sync_instance_config({"name": "test", "base_url": "http://test"})
 
-        result = sync_instance_config(instance_config)
+        assert result is None
+
+    def test_sync_lists_returns_none_without_local_lists(self):
+        """sync_list_config returns None without local lists."""
+        from confighole.utils.tasks import sync_list_config
+
+        result = sync_list_config({"name": "test", "base_url": "http://test"})
 
         assert result is None
 
     @patch("confighole.utils.tasks.create_manager")
-    def test_sync_list_config_no_local_lists(self, mock_create_manager):
-        """Test syncing when no local lists are present."""
+    def test_sync_lists_calls_update(self, mock_create_manager):
+        """sync_list_config calls update_lists on manager."""
         from confighole.utils.tasks import sync_list_config
 
-        instance_config = {"name": "test", "base_url": "http://test"}
-
-        result = sync_list_config(instance_config)
-
-        assert result is None
-
-    @patch("confighole.utils.tasks.create_manager")
-    def test_sync_list_config_with_lists(self, mock_create_manager):
-        """Test syncing with local lists configured."""
-        from confighole.utils.tasks import sync_list_config
-
-        # Mock the manager and its methods
         mock_manager = MagicMock()
         mock_manager.__enter__.return_value = mock_manager
         mock_manager.fetch_lists.return_value = []
         mock_manager.update_lists.return_value = True
         mock_create_manager.return_value = mock_manager
 
-        instance_config = {
+        config = {
             "name": "test",
             "base_url": "http://test",
-            "lists": [
-                {
-                    "address": "https://example.com/test.txt",
-                    "type": "allow",
-                    "comment": "Test list",
-                    "groups": [0],
-                    "enabled": True,
-                }
-            ],
+            "lists": [SAMPLE_LIST],
         }
 
-        result = sync_list_config(instance_config, dry_run=False)
+        result = sync_list_config(config, dry_run=False)
 
         assert result is not None
         assert result["name"] == "test"
-        assert "changes" in result
         mock_manager.update_lists.assert_called_once()
 
+    @patch("confighole.utils.tasks.create_manager")
+    def test_dump_handles_exception(self, mock_create_manager):
+        """dump_instance_data handles exceptions gracefully."""
+        from confighole.utils.tasks import dump_instance_data
 
-@pytest.mark.unit
-class TestCLIErrorHandling:
-    """Unit tests for CLI error handling."""
+        mock_manager = MagicMock()
+        mock_manager.__enter__.side_effect = Exception("Connection failed")
+        mock_create_manager.return_value = mock_manager
 
-    def test_cli_missing_config_file(self):
-        """Test CLI with missing config file."""
-        import subprocess
-
-        result = subprocess.run(
-            [
-                "python",
-                "-m",
-                "confighole.cli",
-                "-c",
-                "nonexistent-config.yaml",
-                "--dump",
-            ],
-            capture_output=True,
-            text=True,
+        result = dump_instance_data(
+            {
+                "name": "test",
+                "base_url": "http://test",
+                "password": "test",
+            }
         )
 
-        assert result.returncode == 1
-
-    def test_cli_invalid_instance_name(self):
-        """Test CLI with invalid instance name."""
-        import subprocess
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write(
-                """
-global:
-  timeout: 30
-instances:
-  - name: test
-    base_url: http://localhost:8080
-    password: test-password-123
-"""
-            )
-            temp_config = f.name
-
-        try:
-            result = subprocess.run(
-                [
-                    "python",
-                    "-m",
-                    "confighole.cli",
-                    "-c",
-                    temp_config,
-                    "-i",
-                    "nonexistent-instance",
-                    "--dump",
-                ],
-                capture_output=True,
-                text=True,
-            )
-
-            assert result.returncode == 1
-            assert "No instance found with name" in result.stderr
-
-        finally:
-            os.unlink(temp_config)
+        assert result is None

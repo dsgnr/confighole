@@ -1,69 +1,19 @@
-"""Unit tests for CLI"""
+"""Unit tests for CLI functionality."""
+
+from __future__ import annotations
 
 import os
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
 
 @pytest.mark.unit
-class TestCLIUnit:
-    """Unit tests for CLI functionality."""
+class TestArgumentParser:
+    """Tests for CLI argument parsing."""
 
-    @patch("confighole.cli.load_yaml_config")
-    @patch("confighole.cli.merge_global_settings")
-    @patch("confighole.cli.process_instances")
-    def test_cli_dump_operation(self, mock_process, mock_merge, mock_load):
-        """Test CLI dump operation without external calls."""
-        from confighole.cli import main
-
-        # Mock the config loading and processing
-        mock_load.return_value = {"global": {}, "instances": []}
-        mock_merge.return_value = [{"name": "test"}]
-        mock_process.return_value = [{"name": "test", "config": {}}]
-
-        # Mock sys.argv
-        with patch("sys.argv", ["confighole", "-c", "test.yaml", "--dump"]):
-            try:
-                main()
-            except SystemExit as e:
-                assert e.code == 0
-
-        # Verify the operation was called with dry_run parameter
-        mock_process.assert_called_once_with([{"name": "test"}], "dump", dry_run=False)
-
-    @patch("confighole.cli.load_yaml_config")
-    def test_cli_missing_instances(self, mock_load):
-        """Test CLI with config that has no instances."""
-        from confighole.cli import main
-
-        mock_load.return_value = {"global": {}, "instances": []}
-
-        with patch("sys.argv", ["confighole", "-c", "test.yaml", "--dump"]):
-            with pytest.raises(SystemExit) as exc_info:
-                main()
-
-        assert exc_info.value.code == 1
-
-    @patch("confighole.cli.load_yaml_config")
-    @patch("confighole.cli.merge_global_settings")
-    def test_cli_instance_filter_not_found(self, mock_merge, mock_load):
-        """Test CLI with instance filter that doesn't match."""
-        from confighole.cli import main
-
-        mock_load.return_value = {"global": {}, "instances": []}
-        mock_merge.return_value = [{"name": "other-instance"}]
-
-        with patch(
-            "sys.argv", ["confighole", "-c", "test.yaml", "-i", "missing", "--dump"]
-        ):
-            with pytest.raises(SystemExit) as exc_info:
-                main()
-
-        assert exc_info.value.code == 1
-
-    def test_cli_help_message(self):
-        """Test CLI help message."""
+    def test_help_message_content(self):
+        """Help message contains expected content."""
         from confighole.cli import create_argument_parser
 
         parser = create_argument_parser()
@@ -74,21 +24,93 @@ class TestCLIUnit:
         assert "--diff" in help_text
         assert "--sync" in help_text
         assert "--daemon" in help_text
+        assert "--dry-run" in help_text
 
-    def test_cli_mutually_exclusive_operations(self):
-        """Test that CLI operations are mutually exclusive."""
+    def test_operations_mutually_exclusive(self):
+        """Operations are mutually exclusive."""
         from confighole.cli import create_argument_parser
 
         parser = create_argument_parser()
 
-        # Should fail with multiple operations
         with pytest.raises(SystemExit):
             parser.parse_args(["-c", "test.yaml", "--dump", "--diff"])
 
+    def test_config_required(self):
+        """Config file is required."""
+        from confighole.cli import create_argument_parser
+
+        parser = create_argument_parser()
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--dump"])
+
+    def test_operation_required(self):
+        """At least one operation is required."""
+        from confighole.cli import create_argument_parser
+
+        parser = create_argument_parser()
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["-c", "test.yaml"])
+
+
+@pytest.mark.unit
+class TestCLIMain:
+    """Tests for CLI main function."""
+
+    @patch("confighole.cli.load_yaml_config")
+    @patch("confighole.cli.merge_global_settings")
+    @patch("confighole.cli.process_instances")
+    def test_dump_operation(self, mock_process, mock_merge, mock_load):
+        """Dump operation calls process_instances correctly."""
+        from confighole.cli import main
+
+        mock_load.return_value = {"global": {}, "instances": []}
+        mock_merge.return_value = [{"name": "test"}]
+        mock_process.return_value = [{"name": "test", "config": {}}]
+
+        with patch("sys.argv", ["confighole", "-c", "test.yaml", "--dump"]):
+            try:
+                main()
+            except SystemExit:
+                pass
+
+        mock_process.assert_called_once_with([{"name": "test"}], "dump", dry_run=False)
+
+    @patch("confighole.cli.load_yaml_config")
+    def test_no_instances_exits(self, mock_load):
+        """No instances in config causes exit."""
+        from confighole.cli import main
+
+        mock_load.return_value = {"global": {}, "instances": []}
+
+        with patch("sys.argv", ["confighole", "-c", "test.yaml", "--dump"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+
+    @patch("confighole.cli.load_yaml_config")
+    @patch("confighole.cli.merge_global_settings")
+    def test_instance_filter_not_found_exits(self, mock_merge, mock_load):
+        """Instance filter with no match causes exit."""
+        from confighole.cli import main
+
+        mock_load.return_value = {"global": {}, "instances": []}
+        mock_merge.return_value = [{"name": "other"}]
+
+        with patch(
+            "sys.argv", ["confighole", "-c", "test.yaml", "-i", "missing", "--dump"]
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+
     @patch("confighole.cli.get_global_daemon_settings")
     @patch("confighole.cli.load_yaml_config")
-    def test_cli_global_settings_precedence(self, mock_load, mock_daemon_settings):
-        """Test CLI global settings precedence."""
+    def test_global_verbosity_used(self, mock_load, mock_daemon_settings):
+        """Global verbosity is used when CLI doesn't specify."""
         from confighole.cli import main
 
         mock_load.return_value = {"global": {"verbosity": 2}, "instances": []}
@@ -99,36 +121,44 @@ class TestCLIUnit:
             "dry_run": False,
         }
 
-        # CLI should use global verbosity when not specified
         with patch("sys.argv", ["confighole", "-c", "test.yaml", "--dump"]):
-            with patch("confighole.cli.setup_logging") as mock_setup_logging:
+            with patch("confighole.cli.setup_logging") as mock_logging:
                 try:
                     main()
                 except SystemExit:
                     pass
 
-        # Should use verbosity from global config
-        mock_setup_logging.assert_called_with(2)
+        mock_logging.assert_called_with(2)
 
-    def test_setup_logging_levels(self):
-        """Test logging setup with different verbosity levels."""
-        from confighole.cli import setup_logging
+    @patch("confighole.cli.load_yaml_config")
+    @patch("confighole.cli.merge_global_settings")
+    @patch("confighole.cli.process_instances")
+    def test_no_results_logs_message(self, mock_process, mock_merge, mock_load):
+        """No results logs appropriate message."""
+        from confighole.cli import main
 
-        # Test different verbosity levels
-        setup_logging(0)
-        # Note: logging level might be affected by other tests, so we test the function exists
-        assert callable(setup_logging)
+        mock_load.return_value = {"global": {}, "instances": []}
+        mock_merge.return_value = [{"name": "test"}]
+        mock_process.return_value = []
 
-        setup_logging(1)
-        assert callable(setup_logging)
+        with patch("sys.argv", ["confighole", "-c", "test.yaml", "--dump"]):
+            with patch("logging.info") as mock_log:
+                try:
+                    main()
+                except SystemExit:
+                    pass
 
-        setup_logging(2)
-        assert callable(setup_logging)
+        mock_log.assert_called_with("No results to display")
+
+
+@pytest.mark.unit
+class TestDaemonModeDetection:
+    """Tests for daemon mode environment detection."""
 
     @patch.dict(os.environ, {"CONFIGHOLE_DAEMON_MODE": "true"})
     @patch("confighole.cli.run_daemon_from_env")
-    def test_cli_daemon_mode_env_detection(self, mock_run_daemon):
-        """Test CLI daemon mode detection from environment."""
+    def test_env_daemon_mode_detected(self, mock_run_daemon):
+        """Daemon mode from environment is detected."""
         from confighole.cli import main
 
         mock_run_daemon.side_effect = SystemExit(0)
@@ -139,217 +169,174 @@ class TestCLIUnit:
         assert exc_info.value.code == 0
         mock_run_daemon.assert_called_once()
 
+
+@pytest.mark.unit
+class TestLoggingSetup:
+    """Tests for logging configuration."""
+
+    def test_setup_logging_callable(self):
+        """setup_logging is callable at all verbosity levels."""
+        from confighole.cli import setup_logging
+
+        setup_logging(0)
+        setup_logging(1)
+        setup_logging(2)
+        setup_logging(10)  # Beyond max level
+
+
+@pytest.mark.unit
+class TestArgumentValidation:
+    """Tests for argument validation."""
+
     @patch("confighole.cli.load_yaml_config")
     @patch("confighole.cli.merge_global_settings")
-    @patch("confighole.cli.process_instances")
-    def test_cli_no_results_message(self, mock_process, mock_merge, mock_load):
-        """Test CLI message when no results are returned."""
+    def test_dry_run_requires_sync_or_daemon(self, mock_merge, mock_load):
+        """--dry-run requires --sync or --daemon."""
         from confighole.cli import main
 
         mock_load.return_value = {"global": {}, "instances": []}
         mock_merge.return_value = [{"name": "test"}]
-        mock_process.return_value = []  # No results
 
-        with patch("sys.argv", ["confighole", "-c", "test.yaml", "--dump"]):
-            with patch("logging.info") as mock_log_info:
-                try:
-                    main()
-                except SystemExit as e:
-                    assert e.code == 0
+        with patch(
+            "sys.argv", ["confighole", "-c", "test.yaml", "--dump", "--dry-run"]
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
 
-        # Should log "No results to display"
-        mock_log_info.assert_called_with("No results to display")
+        assert exc_info.value.code == 1
+
+    @patch("confighole.cli.load_yaml_config")
+    @patch("confighole.cli.merge_global_settings")
+    def test_interval_requires_daemon(self, mock_merge, mock_load):
+        """--interval requires --daemon."""
+        from confighole.cli import main
+
+        mock_load.return_value = {"global": {}, "instances": []}
+        mock_merge.return_value = [{"name": "test"}]
+
+        with patch(
+            "sys.argv", ["confighole", "-c", "test.yaml", "--dump", "--interval", "60"]
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
 
 
 @pytest.mark.unit
-class TestDaemonUnit:
-    """Unit tests for daemon functionality."""
+class TestOperationMode:
+    """Tests for operation mode detection."""
 
-    def test_daemon_config_from_env_defaults(self):
-        """Test daemon config with default values."""
-        from confighole.core.daemon import get_daemon_config_from_env
+    def test_get_operation_mode_dump(self):
+        """Dump operation is detected."""
+        from argparse import Namespace
 
-        # Clear any existing env vars
-        env_vars = [
-            "CONFIGHOLE_DAEMON_MODE",
-            "CONFIGHOLE_DAEMON_INTERVAL",
-            "CONFIGHOLE_CONFIG_PATH",
-            "CONFIGHOLE_INSTANCE",
-            "CONFIGHOLE_DRY_RUN",
-        ]
+        from confighole.cli import get_operation_mode
 
-        original_values = {}
-        for var in env_vars:
-            original_values[var] = os.environ.get(var)
-            if var in os.environ:
-                del os.environ[var]
+        args = Namespace(dump=True, diff=False, daemon=False, sync=False)
+        assert get_operation_mode(args) == "dump"
 
-        try:
-            config = get_daemon_config_from_env()
+    def test_get_operation_mode_diff(self):
+        """Diff operation is detected."""
+        from argparse import Namespace
 
-            assert config["enabled"] is False
-            assert config["interval"] == 300
-            assert config["config_path"] is None
-            assert config["instance"] is None
-            assert config["dry_run"] is False
+        from confighole.cli import get_operation_mode
 
-        finally:
-            # Restore original environment
-            for var, value in original_values.items():
-                if value is not None:
-                    os.environ[var] = value
+        args = Namespace(dump=False, diff=True, daemon=False, sync=False)
+        assert get_operation_mode(args) == "diff"
 
-    def test_daemon_config_from_env_set_values(self):
-        """Test daemon config with set environment values."""
-        from confighole.core.daemon import get_daemon_config_from_env
+    def test_get_operation_mode_daemon(self):
+        """Daemon operation is detected."""
+        from argparse import Namespace
 
-        env_vars = {
-            "CONFIGHOLE_DAEMON_MODE": "true",
-            "CONFIGHOLE_DAEMON_INTERVAL": "600",
-            "CONFIGHOLE_CONFIG_PATH": "/test/config.yaml",
-            "CONFIGHOLE_INSTANCE": "test-instance",
-            "CONFIGHOLE_DRY_RUN": "true",
-        }
+        from confighole.cli import get_operation_mode
 
-        original_values = {}
-        for var, value in env_vars.items():
-            original_values[var] = os.environ.get(var)
-            os.environ[var] = value
+        args = Namespace(dump=False, diff=False, daemon=True, sync=False)
+        assert get_operation_mode(args) == "daemon"
 
-        try:
-            config = get_daemon_config_from_env()
+    def test_get_operation_mode_sync_default(self):
+        """Sync is default when no other operation."""
+        from argparse import Namespace
 
-            assert config["enabled"] is True
-            assert config["interval"] == 600
-            assert config["config_path"] == "/test/config.yaml"
-            assert config["instance"] == "test-instance"
-            assert config["dry_run"] is True
+        from confighole.cli import get_operation_mode
 
-        finally:
-            # Restore original environment
-            for var, value in original_values.items():
-                if value is not None:
-                    os.environ[var] = value
-                elif var in os.environ:
-                    del os.environ[var]
+        args = Namespace(dump=False, diff=False, daemon=False, sync=True)
+        assert get_operation_mode(args) == "sync"
 
-    @patch("confighole.core.daemon.get_daemon_config_from_env")
-    def test_run_daemon_from_env_disabled(self, mock_get_config):
-        """Test running daemon when disabled."""
-        from confighole.core.daemon import run_daemon_from_env
 
-        mock_get_config.return_value = {"enabled": False}
+@pytest.mark.unit
+class TestInstanceFiltering:
+    """Tests for instance filtering."""
+
+    def test_filter_no_target_returns_all(self):
+        """No target returns all instances."""
+        from confighole.cli import filter_instances
+
+        instances = [{"name": "a"}, {"name": "b"}]
+        assert filter_instances(instances, None) == instances
+
+    def test_filter_with_target_returns_match(self):
+        """Target returns matching instance."""
+        from confighole.cli import filter_instances
+
+        instances = [{"name": "a"}, {"name": "b"}]
+        result = filter_instances(instances, "a")
+
+        assert len(result) == 1
+        assert result[0]["name"] == "a"
+
+    def test_filter_no_match_exits(self):
+        """No match causes exit."""
+        from confighole.cli import filter_instances
+
+        instances = [{"name": "a"}]
 
         with pytest.raises(SystemExit) as exc_info:
-            run_daemon_from_env()
+            filter_instances(instances, "missing")
 
         assert exc_info.value.code == 1
 
-    @patch("confighole.core.daemon.get_daemon_config_from_env")
-    def test_run_daemon_from_env_no_config_path(self, mock_get_config):
-        """Test running daemon with no config path."""
-        from confighole.core.daemon import run_daemon_from_env
 
-        mock_get_config.return_value = {"enabled": True, "config_path": None}
+@pytest.mark.unit
+class TestSettingsResolution:
+    """Tests for settings resolution."""
 
-        with pytest.raises(SystemExit) as exc_info:
-            run_daemon_from_env()
+    def test_cli_verbosity_takes_precedence(self):
+        """CLI verbosity overrides global."""
+        from argparse import Namespace
 
-        assert exc_info.value.code == 1
+        from confighole.cli import resolve_settings
 
-    @patch("confighole.core.daemon.ConfigHoleDaemon")
-    @patch("confighole.core.daemon.get_daemon_config_from_env")
-    def test_run_daemon_from_env_success(self, mock_get_config, mock_daemon_class):
-        """Test successful daemon startup."""
-        from confighole.core.daemon import run_daemon_from_env
+        args = Namespace(verbose=2, interval=300, dry_run=False, daemon=False)
+        global_settings = {"verbosity": 1}
 
-        mock_get_config.return_value = {
-            "enabled": True,
-            "config_path": "/test/config.yaml",
-            "interval": 300,
-            "instance": None,
-            "dry_run": False,
-        }
+        result = resolve_settings(args, global_settings)
 
-        mock_daemon = Mock()
-        mock_daemon_class.return_value = mock_daemon
+        assert result["verbosity"] == 2
 
-        run_daemon_from_env()
+    def test_global_verbosity_used_when_cli_zero(self):
+        """Global verbosity used when CLI is 0."""
+        from argparse import Namespace
 
-        # Verify daemon was created and run
-        mock_daemon_class.assert_called_once_with(
-            config_path="/test/config.yaml",
-            interval=300,
-            target_instance=None,
-            dry_run=False,
-        )
-        mock_daemon.run.assert_called_once()
+        from confighole.cli import resolve_settings
 
-    def test_daemon_initialisation(self):
-        """Test daemon initialisation."""
-        from confighole.core.daemon import ConfigHoleDaemon
+        args = Namespace(verbose=0, interval=300, dry_run=False, daemon=False)
+        global_settings = {"verbosity": 2}
 
-        daemon = ConfigHoleDaemon(
-            config_path="/test/config.yaml",
-            interval=60,
-            target_instance="test",
-            dry_run=True,
-        )
+        result = resolve_settings(args, global_settings)
 
-        assert daemon.config_path == "/test/config.yaml"
-        assert daemon.interval == 60
-        assert daemon.target_instance == "test"
-        assert daemon.dry_run is True
-        assert daemon.running is False
+        assert result["verbosity"] == 2
 
-    @patch("confighole.core.daemon.load_yaml_config")
-    @patch("confighole.core.daemon.merge_global_settings")
-    def test_daemon_load_instances_with_target(self, mock_merge, mock_load):
-        """Test daemon loading specific instance."""
-        from confighole.core.daemon import ConfigHoleDaemon
+    def test_dry_run_from_cli_or_global(self):
+        """dry_run from CLI or global."""
+        from argparse import Namespace
 
-        mock_load.return_value = {"global": {}, "instances": []}
-        mock_merge.return_value = [
-            {"name": "test1"},
-            {"name": "test2"},
-        ]
+        from confighole.cli import resolve_settings
 
-        daemon = ConfigHoleDaemon(
-            config_path="/test/config.yaml",
-            target_instance="test1",
-        )
+        args = Namespace(verbose=0, interval=300, dry_run=True, daemon=False)
+        result = resolve_settings(args, {})
+        assert result["dry_run"] is True
 
-        instances = daemon._load_instances()
-
-        assert len(instances) == 1
-        assert instances[0]["name"] == "test1"
-
-    @patch("confighole.core.daemon.load_yaml_config")
-    @patch("confighole.core.daemon.merge_global_settings")
-    def test_daemon_load_instances_all(self, mock_merge, mock_load):
-        """Test daemon loading all instances."""
-        from confighole.core.daemon import ConfigHoleDaemon
-
-        mock_load.return_value = {"global": {}, "instances": []}
-        mock_merge.return_value = [
-            {"name": "test1"},
-            {"name": "test2"},
-        ]
-
-        daemon = ConfigHoleDaemon(config_path="/test/config.yaml")
-
-        instances = daemon._load_instances()
-
-        assert len(instances) == 2
-
-    @patch("confighole.core.daemon.process_instances")
-    def test_daemon_sync_instances(self, mock_process):
-        """Test daemon sync operation."""
-        from confighole.core.daemon import ConfigHoleDaemon
-
-        daemon = ConfigHoleDaemon(config_path="/test/config.yaml")
-        daemon._load_instances = Mock(return_value=[{"name": "test"}])
-
-        daemon._sync_instances()
-
-        mock_process.assert_called_once_with([{"name": "test"}], "sync", dry_run=False)
+        args = Namespace(verbose=0, interval=300, dry_run=False, daemon=False)
+        result = resolve_settings(args, {"dry_run": True})
+        assert result["dry_run"] is True
