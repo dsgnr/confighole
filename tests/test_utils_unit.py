@@ -13,6 +13,7 @@ from confighole.utils.config import (
     load_yaml_config,
     merge_global_settings,
     resolve_password,
+    validate_instance_config,
 )
 from confighole.utils.diff import (
     calculate_clients_diff,
@@ -30,7 +31,6 @@ from confighole.utils.helpers import (
     normalise_configuration,
     normalise_dns_hosts,
     normalise_remote_domains,
-    validate_instance_config,
 )
 from tests.constants import (
     SAMPLE_CLIENT,

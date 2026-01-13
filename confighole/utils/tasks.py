@@ -1,4 +1,4 @@
-"""High-level Pi-hole operations for different modes."""
+"""High-level operations for dumping, diffing, and syncing Pi-hole configs."""
 
 from __future__ import annotations
 
@@ -25,14 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 def dump_instance_data(instance_config: dict[str, Any]) -> dict[str, Any] | None:
-    """Dump configuration from a Pi-hole instance.
+    """Fetch everything from a Pi-hole instance and return it as a dict.
 
-    Args:
-        instance_config: Instance configuration dictionary.
-
-    Returns:
-        Dictionary containing instance name, URL, config, and lists.
-        None if connection fails.
+    Returns None if we can't connect.
     """
     name = instance_config.get("name", "unknown")
     base_url = instance_config.get("base_url")
@@ -41,7 +36,7 @@ def dump_instance_data(instance_config: dict[str, Any]) -> dict[str, Any] | None
     if not manager:
         return None
 
-    logger.info("Connecting to for %s (%s)", name, base_url)
+    logger.info("Connecting to %s (%s)", name, base_url)
 
     try:
         with manager:
@@ -55,21 +50,19 @@ def dump_instance_data(instance_config: dict[str, Any]) -> dict[str, Any] | None
                 "clients": manager.fetch_clients(),
             }
     except Exception as exc:
-        logger.error("Failed to connect to for '%s': %s", name, exc)
+        logger.error("Failed to connect to '%s': %s", name, exc)
         return None
 
 
 def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | None:
-    """Compare local configuration against remote Pi-hole instance.
+    """Compare local config against what's on the Pi-hole.
 
-    Args:
-        instance_config: Instance configuration dictionary.
-
-    Returns:
-        Dictionary containing differences, or None if no differences.
+    Returns None if there are no differences or we can't connect.
     """
     name = instance_config.get("name", "unknown")
     base_url = instance_config.get("base_url")
+
+    # Extract local configurations
     local_config = instance_config.get("config")
     local_lists = instance_config.get("lists")
     local_domains = instance_config.get("domains")
@@ -77,10 +70,7 @@ def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | No
     local_clients = instance_config.get("clients")
 
     # Check if any local configuration exists
-    has_local_config = any(
-        [local_config, local_lists, local_domains, local_groups, local_clients]
-    )
-    if not has_local_config:
+    if not any([local_config, local_lists, local_domains, local_groups, local_clients]):
         logger.info("No local configuration found for instance '%s'", name)
         return None
 
@@ -94,48 +84,44 @@ def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | No
         with manager:
             differences: dict[str, Any] = {}
 
-            if local_config:
-                remote_config = manager.fetch_configuration()
-                normalised_local_config = normalise_configuration(local_config)
-                config_diff = calculate_config_diff(
-                    normalised_local_config, remote_config
-                )
-                if config_diff:
-                    differences["config"] = config_diff
+            # Compare each configuration type
+            diff_specs = [
+                (
+                    local_config,
+                    manager.fetch_configuration,
+                    "config",
+                    lambda loc, rem: calculate_config_diff(
+                        normalise_configuration(loc), rem
+                    ),
+                ),
+                (local_lists, manager.fetch_lists, "lists", calculate_lists_diff),
+                (
+                    local_domains,
+                    manager.fetch_domains,
+                    "domains",
+                    calculate_domains_diff,
+                ),
+                (local_groups, manager.fetch_groups, "groups", calculate_groups_diff),
+                (
+                    local_clients,
+                    manager.fetch_clients,
+                    "clients",
+                    calculate_clients_diff,
+                ),
+            ]
 
-            if local_lists is not None:
-                remote_lists = manager.fetch_lists()
-                lists_diff = calculate_lists_diff(local_lists, remote_lists)
-                if lists_diff:
-                    differences["lists"] = lists_diff
-
-            if local_domains is not None:
-                remote_domains = manager.fetch_domains()
-                domains_diff = calculate_domains_diff(local_domains, remote_domains)
-                if domains_diff:
-                    differences["domains"] = domains_diff
-
-            if local_groups is not None:
-                remote_groups = manager.fetch_groups()
-                groups_diff = calculate_groups_diff(local_groups, remote_groups)
-                if groups_diff:
-                    differences["groups"] = groups_diff
-
-            if local_clients is not None:
-                remote_clients = manager.fetch_clients()
-                clients_diff = calculate_clients_diff(local_clients, remote_clients)
-                if clients_diff:
-                    differences["clients"] = clients_diff
+            for local_data, fetch_func, key, diff_func in diff_specs:
+                if local_data is not None:
+                    remote_data = fetch_func()
+                    diff = diff_func(local_data, remote_data)
+                    if diff:
+                        differences[key] = diff
 
             if not differences:
                 logger.info("No differences found for '%s'", name)
                 return None
 
-            return {
-                "name": name,
-                "base_url": base_url,
-                "diff": differences,
-            }
+            return {"name": name, "base_url": base_url, "diff": differences}
 
     except Exception as exc:
         logger.error("Failed to compare configuration for '%s': %s", name, exc)
@@ -147,14 +133,10 @@ def sync_instance_config(
     *,
     dry_run: bool = False,
 ) -> dict[str, Any] | None:
-    """Synchronise local configuration to Pi-hole instance.
+    """Push local config settings to the Pi-hole.
 
-    Args:
-        instance_config: Instance configuration dictionary.
-        dry_run: If True, only report what would change without applying.
-
-    Returns:
-        Dictionary containing applied changes, or None if no changes needed.
+    With dry_run=True, just shows what would change without doing it.
+    Returns None if there's nothing to sync or it fails.
     """
     name = instance_config.get("name", "unknown")
     base_url = instance_config.get("base_url")
@@ -188,14 +170,62 @@ def sync_instance_config(
                 if not manager.update_configuration(nested_changes, dry_run=False):
                     return None
 
-            return {
-                "name": name,
-                "base_url": base_url,
-                "changes": changes,
-            }
+            return {"name": name, "base_url": base_url, "changes": changes}
 
     except Exception as exc:
         logger.error("Failed to synchronise configuration for '%s': %s", name, exc)
+        return None
+
+
+def _sync_resource(
+    instance_config: dict[str, Any],
+    resource_key: str,
+    fetch_method: str,
+    update_method: str,
+    diff_func: Any,
+    *,
+    dry_run: bool = False,
+    post_sync_action: str | None = None,
+) -> dict[str, Any] | None:
+    """Shared logic for syncing lists, domains, groups, or clients."""
+    name = instance_config.get("name", "unknown")
+    base_url = instance_config.get("base_url")
+    local_data = instance_config.get(resource_key)
+
+    if not local_data:
+        logger.info("No local %s found for instance '%s'", resource_key, name)
+        return None
+
+    manager = create_manager(instance_config)
+    if not manager:
+        return None
+
+    logger.info("Synchronising %s for '%s' (%s)", resource_key, name, base_url)
+
+    try:
+        with manager:
+            remote_data = getattr(manager, fetch_method)()
+            changes = diff_func(local_data, remote_data)
+
+            if not changes:
+                logger.info("No %s changes required for '%s'", resource_key, name)
+                return None
+
+            if dry_run:
+                logger.info("Would apply %s changes for '%s':", resource_key, name)
+                print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
+                if post_sync_action and instance_config.get("update_gravity"):
+                    logger.info("Would %s for '%s'", post_sync_action, name)
+            else:
+                if not getattr(manager, update_method)(changes, dry_run=False):
+                    return None
+                if post_sync_action and instance_config.get("update_gravity"):
+                    getattr(manager, post_sync_action)()
+
+            return {"name": name, "base_url": base_url, "changes": changes}
+
+    except Exception as exc:
+        logger.error("Failed to synchronise %s for '%s': %s", resource_key, name, exc)
         return None
 
 
@@ -204,60 +234,16 @@ def sync_list_config(
     *,
     dry_run: bool = False,
 ) -> dict[str, Any] | None:
-    """Synchronise local lists configuration to Pi-hole instance.
-
-    Args:
-        instance_config: Instance configuration dictionary.
-        dry_run: If True, only report what would change without applying.
-
-    Returns:
-        Dictionary containing applied changes, or None if no changes needed.
-    """
-    name = instance_config.get("name", "unknown")
-    base_url = instance_config.get("base_url")
-    local_lists = instance_config.get("lists")
-    update_gravity = instance_config.get("update_gravity", False)
-
-    if not local_lists:
-        logger.info("No local lists found for instance '%s'", name)
-        return None
-
-    manager = create_manager(instance_config)
-    if not manager:
-        return None
-
-    logger.info("Synchronising lists for '%s' (%s)", name, base_url)
-
-    try:
-        with manager:
-            remote_lists = manager.fetch_lists()
-            changes = calculate_lists_diff(local_lists, remote_lists)
-
-            if not changes:
-                logger.info("No list changes required for '%s'", name)
-                return None
-
-            if dry_run:
-                logger.info("Would apply list changes for '%s':", name)
-                print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
-                if update_gravity:
-                    logger.info("Would update gravity for '%s'", name)
-            else:
-                if not manager.update_lists(changes, dry_run=False):
-                    return None
-
-                if update_gravity:
-                    manager.update_gravity()
-
-            return {
-                "name": name,
-                "base_url": base_url,
-                "changes": changes,
-            }
-
-    except Exception as exc:
-        logger.error("Failed to synchronise lists for '%s': %s", name, exc)
-        return None
+    """Sync adlists to the Pi-hole. Optionally triggers gravity update."""
+    return _sync_resource(
+        instance_config,
+        resource_key="lists",
+        fetch_method="fetch_lists",
+        update_method="update_lists",
+        diff_func=calculate_lists_diff,
+        dry_run=dry_run,
+        post_sync_action="update_gravity",
+    )
 
 
 def sync_domain_config(
@@ -265,54 +251,15 @@ def sync_domain_config(
     *,
     dry_run: bool = False,
 ) -> dict[str, Any] | None:
-    """Synchronise local domains configuration to Pi-hole instance.
-
-    Args:
-        instance_config: Instance configuration dictionary.
-        dry_run: If True, only report what would change without applying.
-
-    Returns:
-        Dictionary containing applied changes, or None if no changes needed.
-    """
-    name = instance_config.get("name", "unknown")
-    base_url = instance_config.get("base_url")
-    local_domains = instance_config.get("domains")
-
-    if not local_domains:
-        logger.info("No local domains found for instance '%s'", name)
-        return None
-
-    manager = create_manager(instance_config)
-    if not manager:
-        return None
-
-    logger.info("Synchronising domains for '%s' (%s)", name, base_url)
-
-    try:
-        with manager:
-            remote_domains = manager.fetch_domains()
-            changes = calculate_domains_diff(local_domains, remote_domains)
-
-            if not changes:
-                logger.info("No domain changes required for '%s'", name)
-                return None
-
-            if dry_run:
-                logger.info("Would apply domain changes for '%s':", name)
-                print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
-            else:
-                if not manager.update_domains(changes, dry_run=False):
-                    return None
-
-            return {
-                "name": name,
-                "base_url": base_url,
-                "changes": changes,
-            }
-
-    except Exception as exc:
-        logger.error("Failed to synchronise domains for '%s': %s", name, exc)
-        return None
+    """Sync domain whitelist/blacklist entries to the Pi-hole."""
+    return _sync_resource(
+        instance_config,
+        resource_key="domains",
+        fetch_method="fetch_domains",
+        update_method="update_domains",
+        diff_func=calculate_domains_diff,
+        dry_run=dry_run,
+    )
 
 
 def sync_group_config(
@@ -320,54 +267,15 @@ def sync_group_config(
     *,
     dry_run: bool = False,
 ) -> dict[str, Any] | None:
-    """Synchronise local groups configuration to Pi-hole instance.
-
-    Args:
-        instance_config: Instance configuration dictionary.
-        dry_run: If True, only report what would change without applying.
-
-    Returns:
-        Dictionary containing applied changes, or None if no changes needed.
-    """
-    name = instance_config.get("name", "unknown")
-    base_url = instance_config.get("base_url")
-    local_groups = instance_config.get("groups")
-
-    if not local_groups:
-        logger.info("No local groups found for instance '%s'", name)
-        return None
-
-    manager = create_manager(instance_config)
-    if not manager:
-        return None
-
-    logger.info("Synchronising groups for '%s' (%s)", name, base_url)
-
-    try:
-        with manager:
-            remote_groups = manager.fetch_groups()
-            changes = calculate_groups_diff(local_groups, remote_groups)
-
-            if not changes:
-                logger.info("No group changes required for '%s'", name)
-                return None
-
-            if dry_run:
-                logger.info("Would apply group changes for '%s':", name)
-                print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
-            else:
-                if not manager.update_groups(changes, dry_run=False):
-                    return None
-
-            return {
-                "name": name,
-                "base_url": base_url,
-                "changes": changes,
-            }
-
-    except Exception as exc:
-        logger.error("Failed to synchronise groups for '%s': %s", name, exc)
-        return None
+    """Sync groups to the Pi-hole."""
+    return _sync_resource(
+        instance_config,
+        resource_key="groups",
+        fetch_method="fetch_groups",
+        update_method="update_groups",
+        diff_func=calculate_groups_diff,
+        dry_run=dry_run,
+    )
 
 
 def sync_client_config(
@@ -375,54 +283,15 @@ def sync_client_config(
     *,
     dry_run: bool = False,
 ) -> dict[str, Any] | None:
-    """Synchronise local clients configuration to Pi-hole instance.
-
-    Args:
-        instance_config: Instance configuration dictionary.
-        dry_run: If True, only report what would change without applying.
-
-    Returns:
-        Dictionary containing applied changes, or None if no changes needed.
-    """
-    name = instance_config.get("name", "unknown")
-    base_url = instance_config.get("base_url")
-    local_clients = instance_config.get("clients")
-
-    if not local_clients:
-        logger.info("No local clients found for instance '%s'", name)
-        return None
-
-    manager = create_manager(instance_config)
-    if not manager:
-        return None
-
-    logger.info("Synchronising clients for '%s' (%s)", name, base_url)
-
-    try:
-        with manager:
-            remote_clients = manager.fetch_clients()
-            changes = calculate_clients_diff(local_clients, remote_clients)
-
-            if not changes:
-                logger.info("No client changes required for '%s'", name)
-                return None
-
-            if dry_run:
-                logger.info("Would apply client changes for '%s':", name)
-                print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
-            else:
-                if not manager.update_clients(changes, dry_run=False):
-                    return None
-
-            return {
-                "name": name,
-                "base_url": base_url,
-                "changes": changes,
-            }
-
-    except Exception as exc:
-        logger.error("Failed to synchronise clients for '%s': %s", name, exc)
-        return None
+    """Sync client definitions to the Pi-hole."""
+    return _sync_resource(
+        instance_config,
+        resource_key="clients",
+        fetch_method="fetch_clients",
+        update_method="update_clients",
+        diff_func=calculate_clients_diff,
+        dry_run=dry_run,
+    )
 
 
 def sync(
@@ -430,37 +299,25 @@ def sync(
     *,
     dry_run: bool = False,
 ) -> dict[str, Any] | None:
-    """Synchronise all configuration to Pi-hole instance.
+    """Sync everything (config, lists, domains, groups, clients) to the Pi-hole.
 
-    Args:
-        instance_config: Instance configuration dictionary.
-        dry_run: If True, only report what would change without applying.
-
-    Returns:
-        Dictionary containing applied changes, or None if no changes needed.
+    Returns None if nothing needed syncing.
     """
     name = instance_config.get("name", "unknown")
     results: dict[str, Any] = {}
 
-    config_result = sync_instance_config(instance_config, dry_run=dry_run)
-    if config_result:
-        results["config"] = config_result.get("changes", {})
+    # Define sync operations with their result keys
+    sync_operations = [
+        (sync_instance_config, "config"),
+        (sync_list_config, "lists"),
+        (sync_domain_config, "domains"),
+        (sync_group_config, "groups"),
+        (sync_client_config, "clients"),
+    ]
 
-    lists_result = sync_list_config(instance_config, dry_run=dry_run)
-    if lists_result:
-        results["lists"] = lists_result.get("changes", {})
-
-    domains_result = sync_domain_config(instance_config, dry_run=dry_run)
-    if domains_result:
-        results["domains"] = domains_result.get("changes", {})
-
-    groups_result = sync_group_config(instance_config, dry_run=dry_run)
-    if groups_result:
-        results["groups"] = groups_result.get("changes", {})
-
-    clients_result = sync_client_config(instance_config, dry_run=dry_run)
-    if clients_result:
-        results["clients"] = clients_result.get("changes", {})
+    for sync_func, key in sync_operations:
+        if result := sync_func(instance_config, dry_run=dry_run):
+            results[key] = result.get("changes", {})
 
     if results:
         return {
@@ -478,38 +335,26 @@ def process_instances(
     operation: str,
     **kwargs: Any,
 ) -> list[dict[str, Any]]:
-    """Process multiple Pi-hole instances with the specified operation.
+    """Run an operation (dump, diff, or sync) across multiple instances.
 
-    Args:
-        instances: List of instance configuration dictionaries.
-        operation: Operation name ('dump', 'diff', or 'sync').
-        **kwargs: Additional arguments passed to the operation (e.g. dry_run).
-
-    Returns:
-        List of results from each successful operation.
-
-    Raises:
-        ValueError: If operation is not recognised.
+    Returns a list of results from instances that had something to report.
     """
-    dry_run = kwargs.get("dry_run", False)
+    operations = {
+        "dump": lambda inst, **kw: dump_instance_data(inst),
+        "diff": lambda inst, **kw: diff_instance_config(inst),
+        "sync": lambda inst, **kw: sync(inst, dry_run=kw.get("dry_run", False)),
+    }
 
-    if operation not in ("dump", "diff", "sync"):
+    if operation not in operations:
         raise ValueError(f"Unknown operation: {operation}")
 
     results: list[dict[str, Any]] = []
+    op_func = operations[operation]
 
     for instance in instances:
         try:
-            if operation == "dump":
-                result = dump_instance_data(instance)
-            elif operation == "diff":
-                result = diff_instance_config(instance)
-            else:
-                result = sync(instance, dry_run=dry_run)
-
-            if result:
+            if result := op_func(instance, **kwargs):
                 results.append(result)
-
         except ConfigurationError as exc:
             logger.error("Configuration error: %s", exc)
 

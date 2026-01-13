@@ -1,4 +1,4 @@
-"""Pi-hole client operations and data fetching."""
+"""Handles talking to the Pi-hole API - fetching and updating config."""
 
 from __future__ import annotations
 
@@ -30,14 +30,10 @@ logger = logging.getLogger(__name__)
 
 
 class PiHoleManager:
-    """Manages Pi-hole client operations and configuration synchronisation.
+    """Wraps the Pi-hole API client with a context manager interface.
 
-    This class provides a context manager interface for connecting to a Pi-hole
-    instance and performing configuration operations.
-
-    Example:
-        manager = PiHoleManager("http://pihole.local", "password")
-        with manager:
+    Use it like:
+        with PiHoleManager("http://pihole.local", "password") as manager:
             config = manager.fetch_configuration()
     """
 
@@ -48,17 +44,7 @@ class PiHoleManager:
         timeout: int = 30,
         verify_ssl: bool = True,
     ) -> None:
-        """Initialise Pi-hole manager.
-
-        Args:
-            base_url: Base URL of the Pi-hole instance.
-            password: Authentication password.
-            timeout: Request timeout in seconds.
-            verify_ssl: Whether to verify SSL certificates.
-
-        Raises:
-            ValueError: If password is empty or None.
-        """
+        """Set up the manager. Doesn't connect until you enter the context."""
         if not password:
             raise ValueError("Password cannot be None or empty")
 
@@ -69,7 +55,7 @@ class PiHoleManager:
         self._client: PiHoleClient | None = None
 
     def __enter__(self) -> PiHoleManager:
-        """Context manager entry - establishes connection."""
+        """Connect to the Pi-hole."""
         logger.debug("Connecting to Pi-hole at %s", self.base_url)
 
         try:
@@ -92,38 +78,24 @@ class PiHoleManager:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """Context manager exit - cleans up connection."""
+        """Clean up the connection."""
         if self._client:
             self._client.__exit__(exc_type, exc_val, exc_tb)
 
     def _handle_auth_error(self, exc: Exception) -> None:
-        """Handle authentication-related errors."""
+        """Log a helpful message if it looks like an auth problem."""
         error_msg = str(exc).lower()
         if "credentials" in error_msg or "unauthorised" in error_msg:
             logger.error("Authentication failed - check your password configuration")
 
     def _ensure_client(self) -> PiHoleClient:
-        """Ensure client is initialised and return it.
-
-        Returns:
-            The initialised PiHoleClient.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Get the client, raising if we're not connected yet."""
         if not self._client:
             raise RuntimeError("Client not initialised")
         return self._client
 
     def fetch_configuration(self) -> dict[str, Any]:
-        """Fetch and normalise remote Pi-hole configuration.
-
-        Returns:
-            Normalised configuration dictionary.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Get the current Pi-hole config, normalised to our format."""
         client = self._ensure_client()
 
         try:
@@ -137,14 +109,7 @@ class PiHoleManager:
             raise
 
     def fetch_lists(self) -> list[dict[str, Any]]:
-        """Fetch remote Pi-hole lists.
-
-        Returns:
-            List of normalised list dictionaries.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Get all adlists from the Pi-hole."""
         client = self._ensure_client()
 
         try:
@@ -158,14 +123,7 @@ class PiHoleManager:
             raise
 
     def fetch_domains(self) -> list[dict[str, Any]]:
-        """Fetch remote Pi-hole domains.
-
-        Returns:
-            List of normalised domain dictionaries.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Get all domain entries (whitelist/blacklist) from the Pi-hole."""
         client = self._ensure_client()
 
         try:
@@ -179,14 +137,7 @@ class PiHoleManager:
             raise
 
     def fetch_groups(self) -> list[dict[str, Any]]:
-        """Fetch remote Pi-hole groups.
-
-        Returns:
-            List of normalised group dictionaries.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Get all groups from the Pi-hole."""
         client = self._ensure_client()
 
         try:
@@ -200,14 +151,7 @@ class PiHoleManager:
             raise
 
     def fetch_clients(self) -> list[dict[str, Any]]:
-        """Fetch remote Pi-hole clients.
-
-        Returns:
-            List of normalised client dictionaries.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Get all client definitions from the Pi-hole."""
         client = self._ensure_client()
 
         try:
@@ -221,16 +165,7 @@ class PiHoleManager:
             raise
 
     def update_gravity(self) -> bool:
-        """Update Pi-hole's gravity database.
-
-        Triggers a gravity update to download and process all configured adlists.
-
-        Returns:
-            True if successful, False on failure.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Trigger a gravity update (re-download all adlists)."""
         client = self._ensure_client()
 
         try:
@@ -243,7 +178,6 @@ class PiHoleManager:
         except Exception as exc:
             logger.error("Failed to update gravity: %s", exc)
             return False
-            raise
 
     def update_configuration(
         self,
@@ -251,18 +185,7 @@ class PiHoleManager:
         *,
         dry_run: bool = False,
     ) -> bool:
-        """Apply configuration changes to Pi-hole instance.
-
-        Args:
-            config_changes: Nested dictionary of configuration changes.
-            dry_run: If True, only log what would change without applying.
-
-        Returns:
-            True if successful, False on failure.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Push config changes to the Pi-hole. Returns True on success."""
         client = self._ensure_client()
 
         if not config_changes:
@@ -293,18 +216,7 @@ class PiHoleManager:
         *,
         dry_run: bool = False,
     ) -> bool:
-        """Apply list changes to Pi-hole instance.
-
-        Args:
-            lists_changes: Dictionary with 'add', 'change', and 'remove' keys.
-            dry_run: If True, only log what would change without applying.
-
-        Returns:
-            True if successful, False on failure.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Apply list changes (add/change/remove). Returns True on success."""
         client = self._ensure_client()
 
         if not lists_changes:
@@ -332,7 +244,7 @@ class PiHoleManager:
         client: PiHoleClient,
         lists_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply list additions."""
+        """Add new lists."""
         if "add" not in lists_changes:
             return
 
@@ -351,11 +263,10 @@ class PiHoleManager:
         client: PiHoleClient,
         lists_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply list changes (delete old, add new)."""
+        """Update existing lists (delete old version, add new)."""
         if "change" not in lists_changes:
             return
 
-        # Delete old versions first
         items_to_delete = [
             BatchDeleteItem(item=item["address"], type=ListType(item["type"]))
             for item in lists_changes["change"]["remote"]
@@ -367,7 +278,6 @@ class PiHoleManager:
                 "Deleted old versions: %s", [item.item for item in items_to_delete]
             )
 
-        # Add updated versions
         for list_item in lists_changes["change"]["local"]:
             client.lists.update_list(
                 address=list_item["address"],
@@ -383,7 +293,7 @@ class PiHoleManager:
         client: PiHoleClient,
         lists_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply list removals."""
+        """Remove lists that shouldn't exist."""
         if "remove" not in lists_changes:
             return
 
@@ -402,18 +312,7 @@ class PiHoleManager:
         *,
         dry_run: bool = False,
     ) -> bool:
-        """Apply domain changes to Pi-hole instance.
-
-        Args:
-            domains_changes: Dictionary with 'add', 'change', and 'remove' keys.
-            dry_run: If True, only log what would change without applying.
-
-        Returns:
-            True if successful, False on failure.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Apply domain changes (add/change/remove). Returns True on success."""
         client = self._ensure_client()
 
         if not domains_changes:
@@ -443,7 +342,7 @@ class PiHoleManager:
         client: PiHoleClient,
         domains_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply domain additions."""
+        """Add new domain entries."""
         if "add" not in domains_changes:
             return
 
@@ -463,11 +362,10 @@ class PiHoleManager:
         client: PiHoleClient,
         domains_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply domain changes (delete old, add new)."""
+        """Update existing domains (delete old, add new)."""
         if "change" not in domains_changes:
             return
 
-        # Delete old versions first
         items_to_delete = [
             DomainBatchDeleteItem(
                 item=item["domain"],
@@ -484,7 +382,6 @@ class PiHoleManager:
                 [item.item for item in items_to_delete],
             )
 
-        # Add updated versions
         for domain_item in domains_changes["change"]["local"]:
             client.domains.update_domain(
                 domain=domain_item["domain"],
@@ -501,7 +398,7 @@ class PiHoleManager:
         client: PiHoleClient,
         domains_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply domain removals."""
+        """Remove domains that shouldn't exist."""
         if "remove" not in domains_changes:
             return
 
@@ -524,18 +421,7 @@ class PiHoleManager:
         *,
         dry_run: bool = False,
     ) -> bool:
-        """Apply group changes to Pi-hole instance.
-
-        Args:
-            groups_changes: Dictionary with 'add', 'change', and 'remove' keys.
-            dry_run: If True, only log what would change without applying.
-
-        Returns:
-            True if successful, False on failure.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Apply group changes (add/change/remove). Returns True on success."""
         client = self._ensure_client()
 
         if not groups_changes:
@@ -565,7 +451,7 @@ class PiHoleManager:
         client: PiHoleClient,
         groups_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply group additions."""
+        """Create new groups."""
         if "add" not in groups_changes:
             return
 
@@ -582,7 +468,7 @@ class PiHoleManager:
         client: PiHoleClient,
         groups_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply group changes."""
+        """Update existing groups."""
         if "change" not in groups_changes:
             return
 
@@ -599,7 +485,7 @@ class PiHoleManager:
         client: PiHoleClient,
         groups_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply group removals."""
+        """Delete groups that shouldn't exist."""
         if "remove" not in groups_changes:
             return
 
@@ -613,18 +499,7 @@ class PiHoleManager:
         *,
         dry_run: bool = False,
     ) -> bool:
-        """Apply client changes to Pi-hole instance.
-
-        Args:
-            clients_changes: Dictionary with 'add', 'change', and 'remove' keys.
-            dry_run: If True, only log what would change without applying.
-
-        Returns:
-            True if successful, False on failure.
-
-        Raises:
-            RuntimeError: If client is not initialised.
-        """
+        """Apply client changes (add/change/remove). Returns True on success."""
         client = self._ensure_client()
 
         if not clients_changes:
@@ -654,7 +529,7 @@ class PiHoleManager:
         client: PiHoleClient,
         clients_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply client additions."""
+        """Add new client definitions."""
         if "add" not in clients_changes:
             return
 
@@ -671,7 +546,7 @@ class PiHoleManager:
         client: PiHoleClient,
         clients_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply client changes."""
+        """Update existing client definitions."""
         if "change" not in clients_changes:
             return
 
@@ -688,7 +563,7 @@ class PiHoleManager:
         client: PiHoleClient,
         clients_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Apply client removals."""
+        """Remove client definitions that shouldn't exist."""
         if "remove" not in clients_changes:
             return
 
@@ -703,13 +578,9 @@ class PiHoleManager:
 
 
 def create_manager(instance_config: dict[str, Any]) -> PiHoleManager | None:
-    """Create a Pi-hole manager from instance configuration.
+    """Build a PiHoleManager from an instance config dict.
 
-    Args:
-        instance_config: Instance configuration dictionary.
-
-    Returns:
-        Configured PiHoleManager, or None if configuration is invalid.
+    Returns None if the config is invalid (missing URL or password).
     """
     try:
         validate_instance_config(instance_config)

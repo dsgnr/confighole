@@ -1,14 +1,5 @@
-"""Custom exceptions for ConfigHole.
-
-This module defines all custom exceptions used throughout the application.
-"""
+"""Custom exceptions for ConfigHole."""
 
 
 class ConfigurationError(Exception):
-    """Raised when there are configuration validation errors.
-
-    This exception is raised when:
-    - Required configuration fields are missing
-    - Configuration values are invalid
-    - Password resolution fails
-    """
+    """Something's wrong with the config - missing fields, bad values, etc."""

@@ -1,4 +1,4 @@
-"""Configuration loading and authentication utilities."""
+"""Handles loading config files and resolving authentication."""
 
 from __future__ import annotations
 
@@ -15,18 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 def resolve_password(instance_config: dict[str, Any]) -> str | None:
-    """Resolve Pi-hole password from instance configuration or environment.
+    """Figure out the password from config, supporting env vars or direct values.
 
-    Supports three methods of password configuration:
-    1. Environment variable syntax: password: ${VAR_NAME}
-    2. Direct password value: password: "my-secret"
-    3. Environment variable reference: password_env: "VAR_NAME"
-
-    Args:
-        instance_config: Instance configuration dictionary.
-
-    Returns:
-        Resolved password string, or None if not found.
+    You can set passwords three ways:
+    - Environment variable syntax: password: ${VAR_NAME}
+    - Direct value: password: "my-secret"
+    - Env var reference: password_env: "VAR_NAME"
     """
     password = instance_config.get("password")
 
@@ -36,29 +30,23 @@ def resolve_password(instance_config: dict[str, Any]) -> str | None:
         and password.startswith("${")
         and password.endswith("}")
     ):
-        env_var = password[2:-1]
-        return os.getenv(env_var)
+        return os.getenv(password[2:-1])
 
     # Direct password
     if password:
         return str(password)
 
     # Fallback to password_env
-    password_env = instance_config.get("password_env")
-    if password_env:
+    if password_env := instance_config.get("password_env"):
         return os.getenv(password_env)
 
     return None
 
 
 def validate_instance_config(instance_config: dict[str, Any]) -> None:
-    """Validate instance configuration for required fields.
+    """Check that an instance config has all the required fields.
 
-    Args:
-        instance_config: Instance configuration dictionary.
-
-    Raises:
-        ConfigurationError: If required fields are missing or invalid.
+    Raises ConfigurationError if base_url or password is missing.
     """
     name = instance_config.get("name", "unknown")
 
@@ -73,17 +61,7 @@ def validate_instance_config(instance_config: dict[str, Any]) -> None:
 
 
 def load_yaml_config(file_path: str) -> dict[str, Any]:
-    """Load and validate a YAML configuration file.
-
-    Args:
-        file_path: Path to the YAML configuration file.
-
-    Returns:
-        Parsed configuration dictionary.
-
-    Note:
-        Exits the programme with code 1 if loading fails.
-    """
+    """Load a YAML config file. Exits with code 1 if it fails."""
     try:
         with open(file_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
@@ -99,52 +77,36 @@ def load_yaml_config(file_path: str) -> dict[str, Any]:
 
 
 def merge_global_settings(config: dict[str, Any]) -> list[dict[str, Any]]:
-    """Merge global settings into instance configurations.
+    """Apply global settings to each instance, letting instance values win.
 
-    Global settings are applied to all instances unless overridden
-    at the instance level. Daemon-specific settings are excluded
-    from instance merging.
-
-    Args:
-        config: Full configuration dictionary with 'global' and 'instances' keys.
-
-    Returns:
-        List of instance configurations with global settings merged in.
+    Daemon-specific settings (daemon_mode, daemon_interval, etc.) are
+    intentionally excluded since they don't belong on individual instances.
     """
     global_settings = config.get("global", {})
     instances = config.get("instances", [])
 
     # Settings that don't apply to individual instances
-    daemon_only_settings = {"daemon_mode", "daemon_interval", "verbosity", "dry_run"}
+    daemon_only_settings = frozenset(
+        {"daemon_mode", "daemon_interval", "verbosity", "dry_run"}
+    )
 
-    merged_instances = []
-    for instance in instances:
-        merged = dict(instance)
+    # Filter global settings once, excluding daemon-only keys
+    applicable_globals = {
+        k: v for k, v in global_settings.items() if k not in daemon_only_settings
+    }
 
-        # Apply global settings, allowing instance overrides
-        for key, value in global_settings.items():
-            if key not in merged and key not in daemon_only_settings:
-                merged[key] = value
-
-        merged_instances.append(merged)
-
-    return merged_instances
+    return [{**applicable_globals, **instance} for instance in instances]
 
 
 def get_global_daemon_settings(config: dict[str, Any]) -> dict[str, Any]:
-    """Extract daemon-specific settings from global configuration.
-
-    Args:
-        config: Full configuration dictionary.
-
-    Returns:
-        Dictionary containing daemon-specific settings with defaults applied.
-    """
+    """Pull out daemon-specific settings from the global config section."""
     global_settings = config.get("global", {})
 
-    return {
-        "daemon_mode": global_settings.get("daemon_mode", False),
-        "daemon_interval": global_settings.get("daemon_interval", 300),
-        "verbosity": global_settings.get("verbosity", 1),
-        "dry_run": global_settings.get("dry_run", False),
+    defaults = {
+        "daemon_mode": False,
+        "daemon_interval": 300,
+        "verbosity": 1,
+        "dry_run": False,
     }
+
+    return {key: global_settings.get(key, default) for key, default in defaults.items()}

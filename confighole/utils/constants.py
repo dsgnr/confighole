@@ -1,14 +1,11 @@
-"""Constants used throughout ConfigHole.
+"""Default values used across ConfigHole."""
 
-This module contains all constant values used by the application.
-"""
+# How often the daemon syncs (in seconds)
+DEFAULT_DAEMON_INTERVAL: int = 300
 
-# Daemon configuration defaults
-DEFAULT_DAEMON_INTERVAL: int = 300  # seconds between sync operations
-
-# Default connection settings
-DEFAULT_TIMEOUT: int = 30  # seconds
+# Connection defaults
+DEFAULT_TIMEOUT: int = 30
 DEFAULT_VERIFY_SSL: bool = True
 
-# Default verbosity level
+# Logging
 DEFAULT_VERBOSITY: int = 1
