@@ -26,12 +26,12 @@ pihole-lib = { git = "https://github.com/dsgnr/pihole-lib.git", rev = "b98c606" 
 pyyaml = "^6.0"
 
 [tool.poetry.group.dev.dependencies]
-ruff = "^0.1.0"
-mypy = "^1.7.0"
+ruff = "^0.14.11"
+mypy = "^1.19.1"
 types-pyyaml = "^6.0.0"
-pytest = "^7.4.0"
-pytest-cov = "^4.1.0"
-docker = "^7.0.0"
+pytest = "^9.0.2"
+pytest-cov = "^7.0.0"
+docker = "^7.1.0"
 requests = "^2.31.0"
 
 [tool.poetry.scripts]
