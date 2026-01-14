@@ -661,7 +661,7 @@ class TestDomainNormalisation:
 
     def test_normalise_remote_domains(self):
         """Remote domains are normalised correctly."""
-        from pihole_lib.models import Domain, DomainKind, DomainType
+        from pihole_lib.models.domains import Domain, DomainKind, DomainType
 
         domains = [
             Domain(

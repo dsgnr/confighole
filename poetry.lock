@@ -522,8 +522,8 @@ requests = "^2.31.0"
 [package.source]
 type = "git"
 url = "https://github.com/dsgnr/pihole-lib.git"
-reference = "HEAD"
-resolved_reference = "998014b5ad37c0b426a5445be1ff921429056679"
+reference = "b98c606"
+resolved_reference = "b98c6066150780dc4cc3ff9a79196814f54d2135"
 
 [[package]]
 name = "pluggy"
@@ -960,4 +960,4 @@ zstd = ["backports-zstd (>=1.0.0) ; python_version < \"3.14\""]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.13"
-content-hash = "0abf190158f3634a3faffb6962a7a799798159c794046c4d4fcbbad5db199cd6"
+content-hash = "01bb08002d93799cbf103d834f6e4da65072cb944fd9d9a9fe6197bcf5cb3204"

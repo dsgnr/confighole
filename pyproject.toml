@@ -22,7 +22,7 @@ packages = [{include = "confighole"}]
 
 [tool.poetry.dependencies]
 python = "^3.13"
-pihole-lib = {git = "https://github.com/dsgnr/pihole-lib.git"}
+pihole-lib = { git = "https://github.com/dsgnr/pihole-lib.git", rev = "b98c606" }
 pyyaml = "^6.0"
 
 [tool.poetry.group.dev.dependencies]

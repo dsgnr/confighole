@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pihole_lib.models import Client, Domain, Group, PiHoleList
+from pihole_lib.models.client_mgmt import Client
+from pihole_lib.models.domains import Domain
+from pihole_lib.models.groups import Group
+from pihole_lib.models.lists import PiHoleList
 
 from confighole.utils.exceptions import ConfigurationError
 

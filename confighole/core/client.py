@@ -6,15 +6,10 @@ import logging
 from types import TracebackType
 from typing import Any
 
-from pihole_lib import PiHoleClient
-from pihole_lib.models import (
-    BatchDeleteItem,
-    ClientBatchDeleteItem,
-    DomainBatchDeleteItem,
-    DomainKind,
-    DomainType,
-    ListType,
-)
+from pihole_lib.client import PiHoleClient
+from pihole_lib.models.client_mgmt import ClientBatchDeleteItem
+from pihole_lib.models.domains import DomainBatchDeleteItem, DomainKind, DomainType
+from pihole_lib.models.lists import BatchDeleteItem, ListType
 
 from confighole.utils.config import resolve_password, validate_instance_config
 from confighole.utils.exceptions import ConfigurationError
