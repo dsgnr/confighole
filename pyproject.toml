@@ -44,6 +44,8 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 target-version = "py312"
 line-length = 88  # Black's default line length
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -69,7 +71,7 @@ line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = "dynamic"
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["confighole"]
 # Black-compatible isort settings
 combine-as-imports = true
