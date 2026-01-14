@@ -108,44 +108,25 @@ def pihole_container() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="session")
-def pihole_session(
-    pihole_container: str,
-) -> Generator[tuple[requests.Session, str], None, None]:
-    """Create a reusable authenticated Pi-hole session."""
-    _ = pihole_container
+def pihole_session(pihole_container):
+    """Create a shared PiHoleClient for integration tests.
 
-    session = requests.Session()
-    session.verify = False
+    This fixture creates a single PiHoleClient instance that is reused
+    across all integration tests in the session, avoiding connection
+    reset errors from creating too many sessions.
+    """
+    from pihole_lib.client import PiHoleClient
 
-    response = session.post(
-        PIHOLE_AUTH_URL,
-        json={"password": PIHOLE_TEST_PASSWORD},
+    client = PiHoleClient(
+        base_url=PIHOLE_AUTH_URL,
+        password=PIHOLE_TEST_PASSWORD,
+        verify_ssl=False,
         timeout=AUTH_TIMEOUT,
     )
 
-    if response.status_code != HTTP_OK:
-        pytest.fail(f"Authentication failed: {response.status_code}")
+    yield client
 
-    data = response.json()
-    session_info = data.get("session", {})
-
-    if not session_info.get("valid"):
-        pytest.fail("Authentication failed - invalid session")
-
-    session_id = session_info.get("sid")
-    if not session_id:
-        pytest.fail("No session ID received")
-
-    session.headers.update({"X-FTL-SID": session_id})
-
-    yield session, session_id
-
-    try:
-        session.delete(PIHOLE_AUTH_URL, timeout=REQUEST_TIMEOUT)
-    except Exception:
-        pass
-    finally:
-        session.close()
+    client.close()
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
