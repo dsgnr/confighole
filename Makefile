@@ -31,19 +31,16 @@ run-docker: ## Run with docker-compose (shows help by default)
 
 # Test commands
 test: ## Run all tests
-	poetry run pytest
-
-test-unit: ## Run unit tests only
-	poetry run pytest -m "unit"
-
-test-integration: ## Run integration tests only
-	poetry run pytest -m "integration"
-
-test-verbose: ## Run tests with verbose output
 	poetry run pytest -v
 
+test-unit: ## Run unit tests only
+	poetry run pytest -m "unit"  -v
+
+test-integration: ## Run integration tests only
+	poetry run pytest -m "integration" -v
+
 test-coverage: ## Run tests with coverage report
-	poetry run pytest --cov=confighole --cov-report=term
+	poetry run pytest -v --cov=confighole --cov-report=term
 
 test-docker: ## Start test Pi-hole container
 	docker-compose -f tests/assets/pihole-docker-compose.yml up -d
