@@ -1,4 +1,4 @@
-.PHONY: help install lint format type-check build run-docker
+.PHONY: help install lint format format-check type-check build run-docker
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -14,6 +14,9 @@ lint: ## Run linting with Ruff
 
 format: ## Format code with Ruff (Black-compatible)
 	poetry run ruff format .
+
+format-check: ## Run Ruff format with check mode
+	poetry run ruff format . --check
 
 type-check: ## Run type checking with mypy
 	poetry run mypy confighole/
