@@ -137,7 +137,7 @@ class PiHoleManager:
 
         try:
             logger.debug("Fetching Pi-hole groups...")
-            raw_groups = client.groups.get_groups().groups
+            raw_groups = client.groups.get_groups()
             return normalise_remote_groups(raw_groups)
 
         except Exception as exc:

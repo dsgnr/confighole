@@ -507,7 +507,7 @@ tests = ["pytest (>=9)", "typing-extensions (>=4.15)"]
 
 [[package]]
 name = "pihole-lib"
-version = "0.1.0"
+version = "1.0.0"
 description = "A non-official comprehensive Python library for Pi-hole API interaction"
 optional = false
 python-versions = "^3.10"
@@ -522,8 +522,8 @@ requests = "^2.31.0"
 [package.source]
 type = "git"
 url = "https://github.com/dsgnr/pihole-lib.git"
-reference = "b98c606"
-resolved_reference = "b98c6066150780dc4cc3ff9a79196814f54d2135"
+reference = "v1.0.0"
+resolved_reference = "efb4b440723acc1a007a0a561117405733a44d9a"
 
 [[package]]
 name = "pluggy"
@@ -979,4 +979,4 @@ zstd = ["backports-zstd (>=1.0.0) ; python_version < \"3.14\""]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.13"
-content-hash = "0fd82a9b9d81a9fb46896126fd04419d27830dcc6bc39a5fd72964d69eb77fe8"
+content-hash = "37ce7e522963f6e2a2e5635a5a41b9fc2dae444cfa39ee5c25e3a0d8401a6fe2"

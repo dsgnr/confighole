@@ -1,6 +1,6 @@
 services:
   pihole:
-    container_name: pihole-test
+    container_name: confighole-test
     image: pihole/pihole:latest
     ports:
       # DNS Ports

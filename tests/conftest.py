@@ -5,25 +5,31 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
+import docker
+import docker.errors
 import pytest
 import requests
+from pihole_lib import PiHoleClient
 
 from tests.constants import (
     AUTH_TIMEOUT,
     CONTAINER_STARTUP_TIMEOUT,
     DOCKER_COMPOSE_FILE,
-    FINAL_WAIT,
     HTTP_OK,
     PIHOLE_AUTH_URL,
+    PIHOLE_BASE_URL,
+    PIHOLE_CONTAINER_NAME,
     PIHOLE_TEST_PASSWORD,
     POLL_INTERVAL,
     REQUEST_TIMEOUT,
+    RETRY_DELAY,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    pass
 
 
 def is_pihole_ready() -> bool:
@@ -42,69 +48,134 @@ def is_pihole_ready() -> bool:
     return False
 
 
-def get_project_dir() -> str:
-    """Get the project root directory."""
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(test_dir)
+def project_root() -> str:
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def cleanup_container() -> None:
-    """Stop and remove the Pi-hole test container."""
+def docker_compose(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    result = subprocess.run(
+        ["docker-compose", "-f", DOCKER_COMPOSE_FILE, *args],
+        cwd=project_root(),
+        check=check,
+        capture_output=True,
+        text=True,
+    )
+    return result
+
+
+def wait_for_container_health(container) -> None:
+    """Block until the Docker container becomes healthy."""
+    elapsed = 0
+
+    while elapsed < CONTAINER_STARTUP_TIMEOUT:
+        container.reload()
+        health = container.attrs.get("State", {}).get("Health", {})
+        status = health.get("Status", "unknown")
+
+        if status == "healthy":
+            return
+
+        if status == "unhealthy":
+            logs = container.logs().decode()
+            pytest.fail(f"Container became unhealthy:\n{logs}")
+
+        time.sleep(POLL_INTERVAL)
+        elapsed += POLL_INTERVAL
+
+    logs = container.logs().decode()
+    pytest.fail(
+        f"Container did not become healthy within {CONTAINER_STARTUP_TIMEOUT}s:\n{logs}"
+    )
+
+
+def is_dns_ready(client) -> bool:
+    """Check if Pi-hole DNS service is ready."""
     try:
-        print("Cleaning up Pi-hole test container...")
-        subprocess.run(
-            ["docker-compose", "-f", DOCKER_COMPOSE_FILE, "down", "-v"],
-            cwd=get_project_dir(),
-            check=False,
-            capture_output=True,
-        )
-        print("Pi-hole test container cleaned up")
-    except Exception as e:
-        print(f"Warning: Container cleanup failed: {e}")
+        from pihole_lib import PiHoleInfo
+
+        info = PiHoleInfo(client)
+        return info.get_login_info().dns
+    except Exception:
+        return False
+
+
+def wait_for_pihole_restart(client, timeout: int = 120) -> None:
+    """Wait for Pi-hole to restart and DNS to become available again."""
+
+    time.sleep(RETRY_DELAY)  # allow restart to begin
+    start = time.time()
+
+    while time.time() - start < timeout:
+        try:
+            temp_client = PiHoleClient(
+                base_url=PIHOLE_BASE_URL,
+                password=PIHOLE_TEST_PASSWORD,
+                verify_ssl=False,
+                timeout=10,
+            )
+
+            if is_dns_ready(temp_client):
+                temp_client.close()
+
+                # Reset original client session (restart invalidates it)
+                client._session_id = None
+                if client._session:
+                    client._session.close()
+                    client._session = None
+
+                time.sleep(RETRY_DELAY)
+                return
+
+            temp_client.close()
+
+        except Exception:
+            pass  # expected during restart window
+
+        time.sleep(RETRY_DELAY)
+
+    raise RuntimeError(f"Pi-hole did not restart within {timeout} seconds")
+
+
+@pytest.fixture
+def pihole_restart_isolation(pihole_container):
+    """Ensure spacing between tests that restart Pi-hole."""
+    yield
+    time.sleep(5)
 
 
 @pytest.fixture(scope="session")
-def pihole_container() -> Generator[str, None, None]:
-    """Ensure Pi-hole container is running for integration tests."""
-    project_dir = get_project_dir()
+def docker_client() -> Iterator[docker.DockerClient]:
+    """Provide a Docker client."""
+    client = docker.from_env()
+    try:
+        yield client
+    finally:
+        client.close()
 
-    # Check if already running
-    if is_pihole_ready():
-        yield "pihole-test"
-        cleanup_container()
+
+@pytest.fixture(scope="session")
+def pihole_container(docker_client):
+    """Start and manage the Pi-hole Docker container."""
+    # if we are running in a CI like GitHub Actions,
+    # we should assume we are using a service container.
+    if os.getenv("IS_CI"):
+        yield None
         return
 
-    # Start the container
     try:
-        subprocess.run(
-            ["docker-compose", "-f", DOCKER_COMPOSE_FILE, "up", "-d"],
-            cwd=project_dir,
-            check=True,
-            capture_output=True,
-        )
+        try:
+            container = docker_client.containers.get(PIHOLE_CONTAINER_NAME)
+            if container.status != "running":
+                container.start()
+        except docker.errors.NotFound:
+            docker_compose("up", "-d")
+            container = docker_client.containers.get(PIHOLE_CONTAINER_NAME)
 
-        # Wait for Pi-hole to be ready
-        elapsed = 0
-        while elapsed < CONTAINER_STARTUP_TIMEOUT:
-            if is_pihole_ready():
-                time.sleep(FINAL_WAIT)
-                yield "pihole-test"
-                cleanup_container()
-                return
+        wait_for_container_health(container)
+        yield container
 
-            time.sleep(POLL_INTERVAL)
-            elapsed += POLL_INTERVAL
-
-        cleanup_container()
-        pytest.fail(f"Pi-hole failed to start within {CONTAINER_STARTUP_TIMEOUT}s")
-
-    except subprocess.CalledProcessError as e:
-        cleanup_container()
-        pytest.skip(f"Failed to start Pi-hole container: {e}")
-
-    except Exception:
-        cleanup_container()
-        raise
+    finally:
+        docker_compose("down", check=False)
 
 
 @pytest.fixture(scope="session")
@@ -115,7 +186,6 @@ def pihole_session(pihole_container):
     across all integration tests in the session, avoiding connection
     reset errors from creating too many sessions.
     """
-    from pihole_lib.client import PiHoleClient
 
     client = PiHoleClient(
         base_url=PIHOLE_AUTH_URL,
@@ -127,14 +197,3 @@ def pihole_session(pihole_container):
     yield client
 
     client.close()
-
-
-def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    """Clean up after all tests complete."""
-    cleanup_container()
-
-
-def pytest_keyboard_interrupt(excinfo: BaseException) -> None:
-    """Clean up when tests are interrupted."""
-    print("\nInterrupt: Cleaning up...")
-    cleanup_container()

@@ -7,6 +7,7 @@ PIHOLE_BASE_URL = "http://localhost:8080"
 PIHOLE_TEST_PASSWORD = "test-password-123"
 PIHOLE_AUTH_ENDPOINT = "/api/auth"
 PIHOLE_AUTH_URL = f"{PIHOLE_BASE_URL}{PIHOLE_AUTH_ENDPOINT}"
+RETRY_DELAY = 5
 
 # Timeout constants (seconds)
 CONTAINER_STARTUP_TIMEOUT = 60
