@@ -1,0 +1,76 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      pihole:
+        image: pihole/pihole:latest
+        ports:
+          - 15353:53/tcp
+          - 15353:53/udp
+          - 8080:80/tcp
+          - 8443:443/tcp
+        env:
+          TZ: UTC
+          FTLCONF_webserver_api_password: test-password-123
+          FTLCONF_dns_listeningMode: ALL
+          FTLCONF_dns_ipv6: "false"
+          FTLCONF_log_level: INFO
+          FTLCONF_webserver_api_enable: "true"
+        options: >-
+          --cap-add=NET_ADMIN
+          --cap-add=SYS_TIME
+          --cap-add=SYS_NICE
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: Wait for Pi-hole to be ready
+        run: |
+          echo "Waiting for Pi-hole web API..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080/api/info/login | grep -q '"dns":true'; then
+              echo "Pi-hole is ready!"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Pi-hole failed to start in time"
+          docker ps
+          docker logs $(docker ps -q --filter ancestor=pihole/pihole:latest)
+          exit 1
+
+      - name: Run pytest
+        env:
+          IS_CI: true
+        run: make test
