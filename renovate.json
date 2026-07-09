@@ -6,8 +6,12 @@
   "dependencyDashboard": false,
   "packageRules": [
     {
+      "matchUpdateTypes": ["patch"],
+      "enabled": false
+    },
+    {
       "matchManagers": ["poetry"],
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchUpdateTypes": ["minor"],
       "automerge": true
     }
   ]
