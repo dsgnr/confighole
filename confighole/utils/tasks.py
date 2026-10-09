@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
 import yaml
 
-from confighole.core.client import create_manager
+from confighole.core.client import PiHoleManager, create_manager
 from confighole.utils.diff import (
     calculate_clients_diff,
     calculate_config_diff,
@@ -131,11 +132,13 @@ def sync_instance_config(
     instance_config: dict[str, Any],
     *,
     dry_run: bool = False,
+    manager: PiHoleManager | None = None,
 ) -> dict[str, Any] | None:
     """Push local config settings to the Pi-hole.
 
     With dry_run=True, just shows what would change without doing it.
     Returns None if there's nothing to sync. Raises if the sync fails.
+    A connected manager can be passed in to reuse its session.
     """
     name = instance_config.get("name", "unknown")
     base_url = instance_config.get("base_url")
@@ -145,13 +148,16 @@ def sync_instance_config(
         logger.info("No local configuration found for instance '%s'", name)
         return None
 
-    manager = create_manager(instance_config)
-    if not manager:
-        return None
+    connection: AbstractContextManager[object] = nullcontext()
+    if manager is None:
+        manager = create_manager(instance_config)
+        if not manager:
+            return None
+        connection = manager
 
     logger.info("Synchronising configuration for %s (%s)", name, base_url)
 
-    with manager:
+    with connection:
         remote_config = manager.fetch_configuration()
         normalised_local = normalise_configuration(local_config)
         changes = calculate_config_diff(normalised_local, remote_config)
@@ -179,6 +185,7 @@ def _sync_resource(
     *,
     dry_run: bool = False,
     post_sync_action: str | None = None,
+    manager: PiHoleManager | None = None,
 ) -> dict[str, Any] | None:
     """Shared logic for syncing lists, domains, groups, or clients."""
     name = instance_config.get("name", "unknown")
@@ -189,13 +196,16 @@ def _sync_resource(
         logger.info("No local %s found for instance '%s'", resource_key, name)
         return None
 
-    manager = create_manager(instance_config)
-    if not manager:
-        return None
+    connection: AbstractContextManager[object] = nullcontext()
+    if manager is None:
+        manager = create_manager(instance_config)
+        if not manager:
+            return None
+        connection = manager
 
     logger.info("Synchronising %s for '%s' (%s)", resource_key, name, base_url)
 
-    with manager:
+    with connection:
         remote_data = getattr(manager, fetch_method)()
         changes = diff_func(local_data, remote_data)
 
@@ -220,6 +230,7 @@ def sync_list_config(
     instance_config: dict[str, Any],
     *,
     dry_run: bool = False,
+    manager: PiHoleManager | None = None,
 ) -> dict[str, Any] | None:
     """Sync adlists to the Pi-hole. Optionally triggers gravity update."""
     return _sync_resource(
@@ -230,6 +241,7 @@ def sync_list_config(
         diff_func=calculate_lists_diff,
         dry_run=dry_run,
         post_sync_action="update_gravity",
+        manager=manager,
     )
 
 
@@ -237,6 +249,7 @@ def sync_domain_config(
     instance_config: dict[str, Any],
     *,
     dry_run: bool = False,
+    manager: PiHoleManager | None = None,
 ) -> dict[str, Any] | None:
     """Sync domain whitelist/blacklist entries to the Pi-hole."""
     return _sync_resource(
@@ -246,6 +259,7 @@ def sync_domain_config(
         update_method="update_domains",
         diff_func=calculate_domains_diff,
         dry_run=dry_run,
+        manager=manager,
     )
 
 
@@ -253,6 +267,7 @@ def sync_group_config(
     instance_config: dict[str, Any],
     *,
     dry_run: bool = False,
+    manager: PiHoleManager | None = None,
 ) -> dict[str, Any] | None:
     """Sync groups to the Pi-hole."""
     return _sync_resource(
@@ -262,6 +277,7 @@ def sync_group_config(
         update_method="update_groups",
         diff_func=calculate_groups_diff,
         dry_run=dry_run,
+        manager=manager,
     )
 
 
@@ -269,6 +285,7 @@ def sync_client_config(
     instance_config: dict[str, Any],
     *,
     dry_run: bool = False,
+    manager: PiHoleManager | None = None,
 ) -> dict[str, Any] | None:
     """Sync client definitions to the Pi-hole."""
     return _sync_resource(
@@ -278,6 +295,7 @@ def sync_client_config(
         update_method="update_clients",
         diff_func=calculate_clients_diff,
         dry_run=dry_run,
+        manager=manager,
     )
 
 
@@ -302,9 +320,21 @@ def sync(
         (sync_client_config, "clients"),
     ]
 
-    for sync_func, key in sync_operations:
-        if result := sync_func(instance_config, dry_run=dry_run):
-            results[key] = result.get("changes", {})
+    manager: PiHoleManager | None = None
+    if any(
+        instance_config.get(key)
+        for key in ("config", "lists", "domains", "groups", "clients")
+    ):
+        manager = create_manager(instance_config)
+
+    # One connection serves every step. A failure raises here and skips the rest.
+    if manager:
+        with manager:
+            for sync_func, key in sync_operations:
+                if result := sync_func(
+                    instance_config, dry_run=dry_run, manager=manager
+                ):
+                    results[key] = result.get("changes", {})
 
     if results:
         return {

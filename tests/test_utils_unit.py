@@ -1192,3 +1192,28 @@ class TestSyncListConfigWithGravity:
 
         assert result is not None
         mock_manager.update_gravity.assert_not_called()
+
+
+@pytest.mark.unit
+class TestSyncSession:
+    """Tests for sharing one connection across sync steps."""
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_connects_once_for_all_steps(self, mock_create_manager):
+        """sync builds one manager and passes it to every step."""
+        from confighole.utils.tasks import sync
+
+        mock_manager = MagicMock()
+        mock_create_manager.return_value = mock_manager
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "lists": [{"address": "https://example.com/list.txt", "type": "block"}],
+            "domains": [{"domain": "ads.example.com", "type": "deny", "kind": "exact"}],
+        }
+
+        sync(config)
+
+        mock_create_manager.assert_called_once()
+        mock_manager.fetch_lists.assert_called_once()
+        mock_manager.fetch_domains.assert_called_once()
