@@ -176,20 +176,12 @@ class PiHoleManager:
     def update_configuration(
         self,
         config_changes: dict[str, Any],
-        *,
-        dry_run: bool = False,
     ) -> None:
         """Push config changes to the Pi-hole. Raises on failure."""
         client = self._ensure_client()
 
         if not config_changes:
             logger.info("No configuration changes to apply")
-            return
-
-        if dry_run:
-            logger.info(
-                "Would apply configuration changes: %s", list(config_changes.keys())
-            )
             return
 
         client.config.update_config(config_changes)
@@ -201,18 +193,12 @@ class PiHoleManager:
     def update_lists(
         self,
         lists_changes: dict[str, dict[str, Any]],
-        *,
-        dry_run: bool = False,
     ) -> None:
         """Apply list changes (add/change/remove). Raises on failure."""
         client = self._ensure_client()
 
         if not lists_changes:
             logger.info("No list changes to apply")
-            return
-
-        if dry_run:
-            logger.info("Would apply list changes: %s", list(lists_changes.keys()))
             return
 
         self._apply_list_additions(client, lists_changes)
@@ -291,18 +277,12 @@ class PiHoleManager:
     def update_domains(
         self,
         domains_changes: dict[str, dict[str, Any]],
-        *,
-        dry_run: bool = False,
     ) -> None:
         """Apply domain changes (add/change/remove). Raises on failure."""
         client = self._ensure_client()
 
         if not domains_changes:
             logger.info("No domain changes to apply")
-            return
-
-        if dry_run:
-            logger.info("Would apply domain changes: %s", list(domains_changes.keys()))
             return
 
         self._apply_domain_additions(client, domains_changes)
@@ -392,18 +372,12 @@ class PiHoleManager:
     def update_groups(
         self,
         groups_changes: dict[str, dict[str, Any]],
-        *,
-        dry_run: bool = False,
     ) -> None:
         """Apply group changes (add/change/remove). Raises on failure."""
         client = self._ensure_client()
 
         if not groups_changes:
             logger.info("No group changes to apply")
-            return
-
-        if dry_run:
-            logger.info("Would apply group changes: %s", list(groups_changes.keys()))
             return
 
         self._apply_group_additions(client, groups_changes)
@@ -462,18 +436,12 @@ class PiHoleManager:
     def update_clients(
         self,
         clients_changes: dict[str, dict[str, Any]],
-        *,
-        dry_run: bool = False,
     ) -> None:
         """Apply client changes (add/change/remove). Raises on failure."""
         client = self._ensure_client()
 
         if not clients_changes:
             logger.info("No client changes to apply")
-            return
-
-        if dry_run:
-            logger.info("Would apply client changes: %s", list(clients_changes.keys()))
             return
 
         self._apply_client_additions(client, clients_changes)

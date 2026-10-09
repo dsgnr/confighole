@@ -158,28 +158,6 @@ class TestPiHoleManagerOperations:
 
         assert manager.update_clients({}) is None
 
-    def test_update_config_dry_run_returns_none(self):
-        """Dry run returns True without calling API."""
-        manager = PiHoleManager("http://test", "password")
-        manager._client = Mock()
-
-        assert manager.update_configuration({"dns": {}}, dry_run=True) is None
-        manager._client.config.update_config.assert_not_called()
-
-    def test_update_lists_dry_run_returns_none(self):
-        """Dry run returns True without calling API."""
-        manager = PiHoleManager("http://test", "password")
-        manager._client = Mock()
-
-        assert manager.update_lists({"add": {"local": []}}, dry_run=True) is None
-
-    def test_update_domains_dry_run_returns_none(self):
-        """Dry run returns True without calling API."""
-        manager = PiHoleManager("http://test", "password")
-        manager._client = Mock()
-
-        assert manager.update_domains({"add": {"local": []}}, dry_run=True) is None
-
     @patch("confighole.core.client.PiHoleClient")
     def test_update_config_failure_raises(self, mock_client_class):
         """API failure raises."""

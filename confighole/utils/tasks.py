@@ -174,7 +174,7 @@ def sync_instance_config(
             print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
         else:
             nested_changes = convert_diff_to_nested_dict(changes)
-            manager.update_configuration(nested_changes, dry_run=False)
+            manager.update_configuration(nested_changes)
 
         return {"name": name, "base_url": base_url, "changes": changes}
 
@@ -220,7 +220,7 @@ def _sync_resource(
             if post_sync_action and instance_config.get("update_gravity"):
                 logger.info("Would %s for '%s'", post_sync_action, name)
         else:
-            getattr(manager, update_method)(changes, dry_run=False)
+            getattr(manager, update_method)(changes)
             if post_sync_action and instance_config.get("update_gravity"):
                 getattr(manager, post_sync_action)()
 
