@@ -29,6 +29,11 @@ class ConfigHoleDaemon:
         dry_run: bool = False,
     ) -> None:
         """Set up the daemon with config path and sync interval."""
+        if interval < 1:
+            raise ConfigurationError(
+                f"Daemon interval must be at least 1 second, got {interval}"
+            )
+
         self.config_path = config_path
         self.interval = interval
         self.target_instance = target_instance
@@ -157,10 +162,15 @@ def run_daemon_from_env() -> None:
         logger.error("Config path required. Set CONFIGHOLE_CONFIG_PATH")
         sys.exit(1)
 
-    daemon = ConfigHoleDaemon(
-        config_path=config["config_path"],
-        interval=config["interval"],
-        target_instance=config["instance"],
-        dry_run=config["dry_run"],
-    )
+    try:
+        daemon = ConfigHoleDaemon(
+            config_path=config["config_path"],
+            interval=config["interval"],
+            target_instance=config["instance"],
+            dry_run=config["dry_run"],
+        )
+    except ConfigurationError as exc:
+        logger.error("%s", exc)
+        sys.exit(1)
+
     daemon.run()

@@ -179,6 +179,13 @@ class TestDaemonInitialisation:
         assert daemon.dry_run is True
         assert not daemon._stop_event.is_set()
 
+    def test_rejects_interval_below_one_second(self):
+        """An interval below one second is rejected when the daemon is created."""
+        from confighole.core.daemon import ConfigHoleDaemon
+
+        with pytest.raises(ConfigurationError):
+            ConfigHoleDaemon(config_path="/test/config.yaml", interval=0)
+
     def test_default_values(self):
         """Default values are applied."""
         from confighole.core.daemon import ConfigHoleDaemon

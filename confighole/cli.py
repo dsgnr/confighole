@@ -160,12 +160,16 @@ def main() -> None:
     operation = get_operation_mode(args)
 
     if operation == "daemon":
-        daemon = ConfigHoleDaemon(
-            config_path=args.config,
-            interval=settings["interval"],
-            target_instance=args.instance,
-            dry_run=settings["dry_run"],
-        )
+        try:
+            daemon = ConfigHoleDaemon(
+                config_path=args.config,
+                interval=settings["interval"],
+                target_instance=args.instance,
+                dry_run=settings["dry_run"],
+            )
+        except ConfigurationError as exc:
+            logging.error("%s", exc)
+            sys.exit(1)
         daemon.run()
         return
 

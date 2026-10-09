@@ -239,6 +239,8 @@ $ confighole -c config.yaml --daemon --instance home --interval 180
 
 **Example:** If your config sets `daemon_interval: 600` but you run with `--interval 300`, the CLI value wins.
 
+The interval must be at least 1 second. A smaller value is rejected at startup with exit code 1.
+
 
 ### Environment Variables
 
