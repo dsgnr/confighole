@@ -260,6 +260,8 @@ Configure daemon mode using environment variables (useful for Docker):
 
 ## Configuration
 
+An empty list (for example `lists: []`) removes every remote entry of that resource. An omitted key leaves the resource unchanged.
+
 ### Global settings
 
 Apply to all instances unless overridden:

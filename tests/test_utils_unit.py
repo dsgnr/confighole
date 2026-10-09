@@ -1217,3 +1217,26 @@ class TestSyncSession:
         mock_create_manager.assert_called_once()
         mock_manager.fetch_lists.assert_called_once()
         mock_manager.fetch_domains.assert_called_once()
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_empty_list_removes_remote_entries(self, mock_create_manager):
+        """An empty lists value marks every remote entry for removal."""
+        from confighole.utils.tasks import sync_list_config
+
+        mock_manager = MagicMock()
+        mock_manager.fetch_lists.return_value = [
+            {
+                "address": "https://example.com/list.txt",
+                "type": "block",
+                "comment": None,
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
+        mock_create_manager.return_value = mock_manager
+        config = {"name": "test", "base_url": "http://test", "lists": []}
+
+        result = sync_list_config(config, dry_run=False)
+
+        assert "remove" in result["changes"]
+        mock_manager.update_lists.assert_called_once()

@@ -70,7 +70,16 @@ def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | No
     local_clients = instance_config.get("clients")
 
     # Check if any local configuration exists
-    if not any([local_config, local_lists, local_domains, local_groups, local_clients]):
+    if all(
+        local is None
+        for local in (
+            local_config,
+            local_lists,
+            local_domains,
+            local_groups,
+            local_clients,
+        )
+    ):
         logger.info("No local configuration found for instance '%s'", name)
         return None
 
@@ -144,7 +153,7 @@ def sync_instance_config(
     base_url = instance_config.get("base_url")
     local_config = instance_config.get("config")
 
-    if not local_config:
+    if local_config is None:
         logger.info("No local configuration found for instance '%s'", name)
         return None
 
@@ -192,7 +201,7 @@ def _sync_resource(
     base_url = instance_config.get("base_url")
     local_data = instance_config.get(resource_key)
 
-    if not local_data:
+    if local_data is None:
         logger.info("No local %s found for instance '%s'", resource_key, name)
         return None
 
@@ -322,7 +331,7 @@ def sync(
 
     manager: PiHoleManager | None = None
     if any(
-        instance_config.get(key)
+        instance_config.get(key) is not None
         for key in ("config", "lists", "domains", "groups", "clients")
     ):
         manager = create_manager(instance_config)
