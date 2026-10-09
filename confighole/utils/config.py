@@ -81,8 +81,9 @@ def merge_global_settings(config: dict[str, Any]) -> list[dict[str, Any]]:
     Daemon-specific settings (daemon_mode, daemon_interval, etc.) are
     intentionally excluded since they don't belong on individual instances.
     """
-    global_settings = config.get("global", {})
-    instances = config.get("instances", [])
+    # An empty YAML section parses as None rather than a missing key.
+    global_settings = config.get("global") or {}
+    instances = config.get("instances") or []
 
     # Settings that don't apply to individual instances
     daemon_only_settings = frozenset(
@@ -117,7 +118,7 @@ def filter_instances(
 
 def get_global_daemon_settings(config: dict[str, Any]) -> dict[str, Any]:
     """Pull out daemon-specific settings from the global config section."""
-    global_settings = config.get("global", {})
+    global_settings = config.get("global") or {}
 
     defaults = {
         "daemon_mode": False,

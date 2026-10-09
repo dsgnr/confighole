@@ -144,6 +144,13 @@ class TestConfigMerging:
         config = {"global": {"timeout": 30}, "instances": []}
         assert merge_global_settings(config) == []
 
+    def test_empty_sections_treated_as_empty(self):
+        """Empty global and instances sections, which parse as None, are accepted."""
+        config = {"global": None, "instances": None}
+
+        assert merge_global_settings(config) == []
+        assert get_global_daemon_settings(config)["daemon_interval"] == 300
+
 
 @pytest.mark.unit
 class TestDaemonSettings:
