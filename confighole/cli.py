@@ -17,6 +17,7 @@ from confighole.utils.config import (
     merge_global_settings,
 )
 from confighole.utils.constants import DEFAULT_DAEMON_INTERVAL
+from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.tasks import process_instances
 
 
@@ -133,7 +134,11 @@ def main() -> None:
     args = parser.parse_args()
 
     # Load config and resolve settings
-    config = load_yaml_config(args.config)
+    try:
+        config = load_yaml_config(args.config)
+    except ConfigurationError as exc:
+        logging.error("%s", exc)
+        sys.exit(1)
     global_daemon_settings = get_global_daemon_settings(config)
     settings = resolve_settings(args, global_daemon_settings)
 

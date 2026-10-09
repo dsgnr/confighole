@@ -12,6 +12,7 @@ from typing import Any
 
 from confighole.utils.config import load_yaml_config, merge_global_settings
 from confighole.utils.constants import DEFAULT_DAEMON_INTERVAL
+from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.tasks import process_instances
 
 logger = logging.getLogger(__name__)
@@ -44,27 +45,24 @@ class ConfigHoleDaemon:
         self.running = False
 
     def _load_instances(self) -> list[dict[str, Any]]:
-        """Load instances from the config file, filtering if needed."""
-        try:
-            config = load_yaml_config(self.config_path)
-            all_instances = merge_global_settings(config)
+        """Load instances from the config file, filtering if needed.
 
-            if not self.target_instance:
-                return all_instances
+        Raises ConfigurationError so that a bad reload does not stop a running daemon.
+        """
+        config = load_yaml_config(self.config_path)
+        all_instances = merge_global_settings(config)
 
-            filtered = [
-                inst
-                for inst in all_instances
-                if inst.get("name") == self.target_instance
-            ]
-            if not filtered:
-                logger.error("No instance found with name '%s'", self.target_instance)
-                sys.exit(1)
-            return filtered
+        if not self.target_instance:
+            return all_instances
 
-        except Exception as exc:
-            logger.error("Failed to load configuration: %s", exc)
-            sys.exit(1)
+        filtered = [
+            inst for inst in all_instances if inst.get("name") == self.target_instance
+        ]
+        if not filtered:
+            raise ConfigurationError(
+                f"No instance found with name '{self.target_instance}'"
+            )
+        return filtered
 
     def _sync_instances(self) -> None:
         """Run a sync across all target instances."""
@@ -103,6 +101,14 @@ class ConfigHoleDaemon:
         )
 
         self.running = True
+
+        # A broken config at startup is fatal. Later reload failures are only logged.
+        try:
+            self._load_instances()
+        except Exception as exc:
+            logger.error("Failed to load configuration: %s", exc)
+            sys.exit(1)
+
         logger.info("Performing initial sync...")
         self._sync_instances()
 

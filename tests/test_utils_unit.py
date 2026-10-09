@@ -187,31 +187,31 @@ class TestDaemonSettings:
 class TestYamlLoading:
     """Tests for YAML configuration loading."""
 
-    def test_missing_file_exits(self):
-        """Missing file causes system exit."""
-        with pytest.raises(SystemExit):
+    def test_missing_file_raises(self):
+        """Missing file raises ConfigurationError."""
+        with pytest.raises(ConfigurationError):
             load_yaml_config("nonexistent.yaml")
 
-    def test_invalid_yaml_exits(self):
-        """Invalid YAML causes system exit."""
+    def test_invalid_yaml_raises(self):
+        """Invalid YAML raises ConfigurationError."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("invalid: yaml: [unclosed")
             temp_file = f.name
 
         try:
-            with pytest.raises(SystemExit):
+            with pytest.raises(ConfigurationError):
                 load_yaml_config(temp_file)
         finally:
             os.unlink(temp_file)
 
-    def test_non_dict_yaml_exits(self):
-        """YAML that isn't a dict causes system exit."""
+    def test_non_dict_yaml_raises(self):
+        """YAML that isn't a dict raises ConfigurationError."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("- item1\n- item2")
             temp_file = f.name
 
         try:
-            with pytest.raises(SystemExit):
+            with pytest.raises(ConfigurationError):
                 load_yaml_config(temp_file)
         finally:
             os.unlink(temp_file)

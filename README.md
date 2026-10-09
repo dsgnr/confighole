@@ -216,6 +216,8 @@ $ confighole -c config.yaml --daemon
 
 Daemon mode is useful if you want your Pi-hole instances to drift as little as possible. It periodically compares the live state with your config and applies any differences.
 
+The config file is read again on every sync cycle. If it is invalid at startup, the daemon exits with code 1. If it becomes invalid while running, the error is logged, that cycle is skipped and the daemon keeps running.
+
 ```bash
 # Default interval (5 minutes)
 $ confighole -c config.yaml --daemon

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from typing import Any
 
 import yaml
@@ -61,7 +60,7 @@ def validate_instance_config(instance_config: dict[str, Any]) -> None:
 
 
 def load_yaml_config(file_path: str) -> dict[str, Any]:
-    """Load a YAML config file. Exits with code 1 if it fails."""
+    """Load a YAML config file. Raises ConfigurationError if it fails."""
     try:
         with open(file_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
@@ -72,8 +71,7 @@ def load_yaml_config(file_path: str) -> dict[str, Any]:
         return config
 
     except Exception as exc:
-        logger.error("Failed to load config %s: %s", file_path, exc)
-        sys.exit(1)
+        raise ConfigurationError(f"Failed to load config {file_path}: {exc}") from exc
 
 
 def merge_global_settings(config: dict[str, Any]) -> list[dict[str, Any]]:

@@ -7,6 +7,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from confighole.utils.exceptions import ConfigurationError
+
 
 @pytest.mark.unit
 class TestDaemonEnvConfig:
@@ -226,8 +228,8 @@ class TestDaemonInstanceLoading:
 
     @patch("confighole.core.daemon.load_yaml_config")
     @patch("confighole.core.daemon.merge_global_settings")
-    def test_target_not_found_exits(self, mock_merge, mock_load):
-        """Missing target instance exits."""
+    def test_target_not_found_raises(self, mock_merge, mock_load):
+        """Missing target instance raises ConfigurationError."""
         from confighole.core.daemon import ConfigHoleDaemon
 
         mock_load.return_value = {"global": {}, "instances": []}
@@ -238,10 +240,18 @@ class TestDaemonInstanceLoading:
             target_instance="missing",
         )
 
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(ConfigurationError):
             daemon._load_instances()
 
-        assert exc_info.value.code == 1
+    @patch("confighole.core.daemon.load_yaml_config")
+    def test_sync_survives_reload_failure(self, mock_load):
+        """A failed reload is logged and the sync cycle is skipped."""
+        from confighole.core.daemon import ConfigHoleDaemon
+
+        mock_load.side_effect = ConfigurationError("bad config")
+
+        daemon = ConfigHoleDaemon(config_path="/test/config.yaml")
+        daemon._sync_instances()
 
 
 @pytest.mark.unit
