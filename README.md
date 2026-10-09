@@ -212,6 +212,13 @@ $ confighole -c config.yaml --sync
 $ confighole -c config.yaml --daemon
 ```
 
+### Exit codes
+
+- `0`: the operation completed, or there was nothing to change.
+- `1`: the configuration could not be loaded, the `--instance` name does not exist, or `--sync` failed for one or more instances. The names of failed instances are logged.
+
+`--dump` and `--diff` do not report connection failures through the exit code. In daemon mode, a failed sync is logged and the daemon keeps running.
+
 ## Daemon Mode
 
 Daemon mode is useful if you want your Pi-hole instances to drift as little as possible. It periodically compares the live state with your config and applies any differences.

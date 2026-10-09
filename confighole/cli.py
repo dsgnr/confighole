@@ -165,7 +165,7 @@ def main() -> None:
         return
 
     try:
-        results = process_instances(
+        results, failed = process_instances(
             target_instances, operation, dry_run=settings["dry_run"]
         )
 
@@ -183,6 +183,10 @@ def main() -> None:
         sys.exit(1)
     except Exception as exc:
         logging.error("Unexpected error: %s", exc)
+        sys.exit(1)
+
+    if failed:
+        logging.error("Failed instance(s): %s", ", ".join(failed))
         sys.exit(1)
 
 

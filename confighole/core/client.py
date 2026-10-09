@@ -179,60 +179,48 @@ class PiHoleManager:
         config_changes: dict[str, Any],
         *,
         dry_run: bool = False,
-    ) -> bool:
-        """Push config changes to the Pi-hole. Returns True on success."""
+    ) -> None:
+        """Push config changes to the Pi-hole. Raises on failure."""
         client = self._ensure_client()
 
         if not config_changes:
             logger.info("No configuration changes to apply")
-            return True
+            return
 
-        try:
-            if dry_run:
-                logger.info(
-                    "Would apply configuration changes: %s", list(config_changes.keys())
-                )
-                return True
-
-            client.config.update_config(config_changes)
+        if dry_run:
             logger.info(
-                "Successfully applied configuration changes: %s",
-                list(config_changes.keys()),
+                "Would apply configuration changes: %s", list(config_changes.keys())
             )
-            return True
+            return
 
-        except Exception as exc:
-            logger.error("Failed to update configuration: %s", exc)
-            return False
+        client.config.update_config(config_changes)
+        logger.info(
+            "Successfully applied configuration changes: %s",
+            list(config_changes.keys()),
+        )
 
     def update_lists(
         self,
         lists_changes: dict[str, dict[str, Any]],
         *,
         dry_run: bool = False,
-    ) -> bool:
-        """Apply list changes (add/change/remove). Returns True on success."""
+    ) -> None:
+        """Apply list changes (add/change/remove). Raises on failure."""
         client = self._ensure_client()
 
         if not lists_changes:
             logger.info("No list changes to apply")
-            return True
+            return
 
-        try:
-            if dry_run:
-                logger.info("Would apply list changes: %s", list(lists_changes.keys()))
-                return True
+        if dry_run:
+            logger.info("Would apply list changes: %s", list(lists_changes.keys()))
+            return
 
-            self._apply_list_additions(client, lists_changes)
-            self._apply_list_changes(client, lists_changes)
-            self._apply_list_removals(client, lists_changes)
+        self._apply_list_additions(client, lists_changes)
+        self._apply_list_changes(client, lists_changes)
+        self._apply_list_removals(client, lists_changes)
 
-            logger.info("Successfully applied list changes")
-            return True
-
-        except Exception as exc:
-            logger.error("Failed to update lists: %s", exc)
-            return False
+        logger.info("Successfully applied list changes")
 
     def _apply_list_additions(
         self,
@@ -306,31 +294,23 @@ class PiHoleManager:
         domains_changes: dict[str, dict[str, Any]],
         *,
         dry_run: bool = False,
-    ) -> bool:
-        """Apply domain changes (add/change/remove). Returns True on success."""
+    ) -> None:
+        """Apply domain changes (add/change/remove). Raises on failure."""
         client = self._ensure_client()
 
         if not domains_changes:
             logger.info("No domain changes to apply")
-            return True
+            return
 
-        try:
-            if dry_run:
-                logger.info(
-                    "Would apply domain changes: %s", list(domains_changes.keys())
-                )
-                return True
+        if dry_run:
+            logger.info("Would apply domain changes: %s", list(domains_changes.keys()))
+            return
 
-            self._apply_domain_additions(client, domains_changes)
-            self._apply_domain_changes(client, domains_changes)
-            self._apply_domain_removals(client, domains_changes)
+        self._apply_domain_additions(client, domains_changes)
+        self._apply_domain_changes(client, domains_changes)
+        self._apply_domain_removals(client, domains_changes)
 
-            logger.info("Successfully applied domain changes")
-            return True
-
-        except Exception as exc:
-            logger.error("Failed to update domains: %s", exc)
-            return False
+        logger.info("Successfully applied domain changes")
 
     def _apply_domain_additions(
         self,
@@ -415,31 +395,23 @@ class PiHoleManager:
         groups_changes: dict[str, dict[str, Any]],
         *,
         dry_run: bool = False,
-    ) -> bool:
-        """Apply group changes (add/change/remove). Returns True on success."""
+    ) -> None:
+        """Apply group changes (add/change/remove). Raises on failure."""
         client = self._ensure_client()
 
         if not groups_changes:
             logger.info("No group changes to apply")
-            return True
+            return
 
-        try:
-            if dry_run:
-                logger.info(
-                    "Would apply group changes: %s", list(groups_changes.keys())
-                )
-                return True
+        if dry_run:
+            logger.info("Would apply group changes: %s", list(groups_changes.keys()))
+            return
 
-            self._apply_group_additions(client, groups_changes)
-            self._apply_group_changes(client, groups_changes)
-            self._apply_group_removals(client, groups_changes)
+        self._apply_group_additions(client, groups_changes)
+        self._apply_group_changes(client, groups_changes)
+        self._apply_group_removals(client, groups_changes)
 
-            logger.info("Successfully applied group changes")
-            return True
-
-        except Exception as exc:
-            logger.error("Failed to update groups: %s", exc)
-            return False
+        logger.info("Successfully applied group changes")
 
     def _apply_group_additions(
         self,
@@ -493,31 +465,23 @@ class PiHoleManager:
         clients_changes: dict[str, dict[str, Any]],
         *,
         dry_run: bool = False,
-    ) -> bool:
-        """Apply client changes (add/change/remove). Returns True on success."""
+    ) -> None:
+        """Apply client changes (add/change/remove). Raises on failure."""
         client = self._ensure_client()
 
         if not clients_changes:
             logger.info("No client changes to apply")
-            return True
+            return
 
-        try:
-            if dry_run:
-                logger.info(
-                    "Would apply client changes: %s", list(clients_changes.keys())
-                )
-                return True
+        if dry_run:
+            logger.info("Would apply client changes: %s", list(clients_changes.keys()))
+            return
 
-            self._apply_client_additions(client, clients_changes)
-            self._apply_client_changes(client, clients_changes)
-            self._apply_client_removals(client, clients_changes)
+        self._apply_client_additions(client, clients_changes)
+        self._apply_client_changes(client, clients_changes)
+        self._apply_client_removals(client, clients_changes)
 
-            logger.info("Successfully applied client changes")
-            return True
-
-        except Exception as exc:
-            logger.error("Failed to update clients: %s", exc)
-            return False
+        logger.info("Successfully applied client changes")
 
     def _apply_client_additions(
         self,

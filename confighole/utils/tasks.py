@@ -15,7 +15,6 @@ from confighole.utils.diff import (
     calculate_groups_diff,
     calculate_lists_diff,
 )
-from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.helpers import (
     convert_diff_to_nested_dict,
     normalise_configuration,
@@ -136,7 +135,7 @@ def sync_instance_config(
     """Push local config settings to the Pi-hole.
 
     With dry_run=True, just shows what would change without doing it.
-    Returns None if there's nothing to sync or it fails.
+    Returns None if there's nothing to sync. Raises if the sync fails.
     """
     name = instance_config.get("name", "unknown")
     base_url = instance_config.get("base_url")
@@ -152,29 +151,23 @@ def sync_instance_config(
 
     logger.info("Synchronising configuration for %s (%s)", name, base_url)
 
-    try:
-        with manager:
-            remote_config = manager.fetch_configuration()
-            normalised_local = normalise_configuration(local_config)
-            changes = calculate_config_diff(normalised_local, remote_config)
+    with manager:
+        remote_config = manager.fetch_configuration()
+        normalised_local = normalise_configuration(local_config)
+        changes = calculate_config_diff(normalised_local, remote_config)
 
-            if not changes:
-                logger.info("No changes required for '%s'", name)
-                return None
+        if not changes:
+            logger.info("No changes required for '%s'", name)
+            return None
 
-            if dry_run:
-                logger.info("Would apply changes for '%s':", name)
-                print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
-            else:
-                nested_changes = convert_diff_to_nested_dict(changes)
-                if not manager.update_configuration(nested_changes, dry_run=False):
-                    return None
+        if dry_run:
+            logger.info("Would apply changes for '%s':", name)
+            print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
+        else:
+            nested_changes = convert_diff_to_nested_dict(changes)
+            manager.update_configuration(nested_changes, dry_run=False)
 
-            return {"name": name, "base_url": base_url, "changes": changes}
-
-    except Exception as exc:
-        logger.error("Failed to synchronise configuration for '%s': %s", name, exc)
-        return None
+        return {"name": name, "base_url": base_url, "changes": changes}
 
 
 def _sync_resource(
@@ -202,31 +195,25 @@ def _sync_resource(
 
     logger.info("Synchronising %s for '%s' (%s)", resource_key, name, base_url)
 
-    try:
-        with manager:
-            remote_data = getattr(manager, fetch_method)()
-            changes = diff_func(local_data, remote_data)
+    with manager:
+        remote_data = getattr(manager, fetch_method)()
+        changes = diff_func(local_data, remote_data)
 
-            if not changes:
-                logger.info("No %s changes required for '%s'", resource_key, name)
-                return None
+        if not changes:
+            logger.info("No %s changes required for '%s'", resource_key, name)
+            return None
 
-            if dry_run:
-                logger.info("Would apply %s changes for '%s':", resource_key, name)
-                print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
-                if post_sync_action and instance_config.get("update_gravity"):
-                    logger.info("Would %s for '%s'", post_sync_action, name)
-            else:
-                if not getattr(manager, update_method)(changes, dry_run=False):
-                    return None
-                if post_sync_action and instance_config.get("update_gravity"):
-                    getattr(manager, post_sync_action)()
+        if dry_run:
+            logger.info("Would apply %s changes for '%s':", resource_key, name)
+            print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
+            if post_sync_action and instance_config.get("update_gravity"):
+                logger.info("Would %s for '%s'", post_sync_action, name)
+        else:
+            getattr(manager, update_method)(changes, dry_run=False)
+            if post_sync_action and instance_config.get("update_gravity"):
+                getattr(manager, post_sync_action)()
 
-            return {"name": name, "base_url": base_url, "changes": changes}
-
-    except Exception as exc:
-        logger.error("Failed to synchronise %s for '%s': %s", resource_key, name, exc)
-        return None
+        return {"name": name, "base_url": base_url, "changes": changes}
 
 
 def sync_list_config(
@@ -334,10 +321,11 @@ def process_instances(
     instances: list[dict[str, Any]],
     operation: str,
     **kwargs: Any,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Run an operation (dump, diff, or sync) across multiple instances.
 
-    Returns a list of results from instances that had something to report.
+    Returns a tuple of the results from instances that had something to report,
+    and the names of instances whose operation raised an exception.
     """
     operations = {
         "dump": lambda inst, **kw: dump_instance_data(inst),
@@ -349,13 +337,16 @@ def process_instances(
         raise ValueError(f"Unknown operation: {operation}")
 
     results: list[dict[str, Any]] = []
+    failed: list[str] = []
     op_func = operations[operation]
 
     for instance in instances:
         try:
             if result := op_func(instance, **kwargs):
                 results.append(result)
-        except ConfigurationError as exc:
-            logger.error("Configuration error: %s", exc)
+        except Exception as exc:
+            name = instance.get("name", "unknown")
+            logger.error("Operation failed for '%s': %s", name, exc)
+            failed.append(name)
 
-    return results
+    return results, failed
