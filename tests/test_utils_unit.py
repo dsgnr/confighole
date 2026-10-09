@@ -888,6 +888,12 @@ class TestGroupsDiff:
         groups = [SAMPLE_GROUP]
         assert calculate_groups_diff(groups, groups) == {}
 
+    def test_default_group_never_removed(self):
+        """The default group (id 0) is not removed when absent from local config."""
+        remote = [{"id": 0, "name": "Default", "comment": None, "enabled": True}]
+
+        assert calculate_groups_diff([], remote) == {}
+
     def test_addition_detected(self):
         """New group in local is detected as addition."""
         local = [SAMPLE_GROUP]

@@ -132,14 +132,26 @@ def calculate_groups_diff(
     local_groups: list[dict[str, Any]],
     remote_groups: list[dict[str, Any]] | None,
 ) -> dict[str, dict[str, Any]]:
-    """Compare local and remote groups, keyed by name."""
-    return _calculate_items_diff(
+    """Compare local and remote groups, keyed by name.
+
+    The default group (id 0) is never scheduled for removal.
+    """
+    result = _calculate_items_diff(
         local_groups,
         remote_groups,
         key_func=lambda item: item["name"],
         compare_fields=["comment", "enabled"],
         required_keys=("name",),
     )
+
+    if "remove" in result:
+        removable = [item for item in result["remove"]["remote"] if item.get("id") != 0]
+        if removable:
+            result["remove"]["remote"] = removable
+        else:
+            del result["remove"]
+
+    return result
 
 
 def calculate_clients_diff(

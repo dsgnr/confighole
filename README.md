@@ -332,6 +332,8 @@ groups:
     enabled: true
 ```
 
+The default group (id 0) is never removed by a sync, even when it is missing from `groups`.
+
 ### Client configuration
 
 Clients can be identified by IP address, MAC address, hostname, subnet (CIDR), or interface:

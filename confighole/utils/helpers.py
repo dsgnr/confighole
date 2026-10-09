@@ -100,6 +100,7 @@ def normalise_remote_groups(groups: list[Group]) -> list[dict[str, Any]]:
     """Turn Group objects from the API into plain dicts."""
     return [
         {
+            "id": item.id,
             "name": item.name,
             "comment": item.comment,
             "enabled": item.enabled,
