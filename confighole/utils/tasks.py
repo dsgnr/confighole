@@ -33,8 +33,6 @@ def dump_instance_data(instance_config: dict[str, Any]) -> dict[str, Any] | None
     base_url = instance_config.get("base_url")
 
     manager = create_manager(instance_config)
-    if not manager:
-        return None
 
     logger.info("Connecting to %s (%s)", name, base_url)
 
@@ -84,8 +82,6 @@ def diff_instance_config(instance_config: dict[str, Any]) -> dict[str, Any] | No
         return None
 
     manager = create_manager(instance_config)
-    if not manager:
-        return None
 
     logger.info("Comparing configuration for %s (%s)", name, base_url)
 
@@ -160,8 +156,6 @@ def sync_instance_config(
     connection: AbstractContextManager[object] = nullcontext()
     if manager is None:
         manager = create_manager(instance_config)
-        if not manager:
-            return None
         connection = manager
 
     logger.info("Synchronising configuration for %s (%s)", name, base_url)
@@ -208,8 +202,6 @@ def _sync_resource(
     connection: AbstractContextManager[object] = nullcontext()
     if manager is None:
         manager = create_manager(instance_config)
-        if not manager:
-            return None
         connection = manager
 
     logger.info("Synchronising %s for '%s' (%s)", resource_key, name, base_url)

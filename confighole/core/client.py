@@ -12,7 +12,6 @@ from pihole_lib.models.domains import DomainBatchDeleteItem, DomainKind, DomainT
 from pihole_lib.models.lists import BatchDeleteItem, ListType
 
 from confighole.utils.config import resolve_password, validate_instance_config
-from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.helpers import (
     normalise_configuration,
     normalise_remote_clients,
@@ -536,33 +535,16 @@ class PiHoleManager:
             logger.debug("Removed clients: %s", [item.item for item in items_to_remove])
 
 
-def create_manager(instance_config: dict[str, Any]) -> PiHoleManager | None:
+def create_manager(instance_config: dict[str, Any]) -> PiHoleManager:
     """Build a PiHoleManager from an instance config dict.
 
-    Returns None if the config is invalid (missing URL or password).
+    Raises ConfigurationError if the base URL or password is missing.
     """
-    try:
-        validate_instance_config(instance_config)
+    validate_instance_config(instance_config)
 
-        base_url = instance_config.get("base_url")
-        password = resolve_password(instance_config)
-        timeout = instance_config.get("timeout", 30)
-        verify_ssl = instance_config.get("verify_ssl", True)
-
-        if not base_url or not password:
-            return None
-
-        return PiHoleManager(
-            base_url=base_url,
-            password=password,
-            timeout=timeout,
-            verify_ssl=verify_ssl,
-        )
-
-    except (ConfigurationError, ValueError) as exc:
-        logger.error(
-            "Configuration error for instance '%s': %s",
-            instance_config.get("name", "unknown"),
-            exc,
-        )
-        return None
+    return PiHoleManager(
+        base_url=instance_config["base_url"],
+        password=resolve_password(instance_config) or "",
+        timeout=instance_config.get("timeout", 30),
+        verify_ssl=instance_config.get("verify_ssl", True),
+    )

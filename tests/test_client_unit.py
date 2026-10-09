@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from confighole.core.client import PiHoleManager, create_manager
+from confighole.utils.exceptions import ConfigurationError
 
 
 @pytest.mark.unit
@@ -197,21 +198,19 @@ class TestPiHoleManagerOperations:
 class TestCreateManager:
     """Tests for create_manager factory function."""
 
-    def test_missing_base_url_returns_none(self):
-        """Missing base_url returns None."""
+    def test_missing_base_url_raises(self):
+        """Missing base_url raises ConfigurationError."""
         config = {"name": "test", "password": "secret"}
 
-        result = create_manager(config)
+        with pytest.raises(ConfigurationError, match="base_url"):
+            create_manager(config)
 
-        assert result is None
-
-    def test_missing_password_returns_none(self):
-        """Missing password returns None."""
+    def test_missing_password_raises(self):
+        """Missing password raises ConfigurationError."""
         config = {"name": "test", "base_url": "http://test"}
 
-        result = create_manager(config)
-
-        assert result is None
+        with pytest.raises(ConfigurationError, match="no password"):
+            create_manager(config)
 
     def test_valid_config_returns_manager(self):
         """Valid config returns PiHoleManager."""
@@ -246,17 +245,16 @@ class TestCreateManager:
         finally:
             del os.environ["TEST_PW"]
 
-    def test_missing_env_password_returns_none(self):
-        """Missing environment variable returns None."""
+    def test_missing_env_password_raises(self):
+        """Missing environment variable raises ConfigurationError."""
         config = {
             "name": "test",
             "base_url": "http://test",
             "password": "${MISSING_VAR}",
         }
 
-        result = create_manager(config)
-
-        assert result is None
+        with pytest.raises(ConfigurationError, match="no password"):
+            create_manager(config)
 
     def test_custom_timeout_and_ssl(self):
         """Custom timeout and SSL settings are applied."""

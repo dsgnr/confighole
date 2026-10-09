@@ -577,16 +577,30 @@ class TestTaskOperations:
         with pytest.raises(ValueError, match="Unknown operation"):
             process_instances([{"name": "test"}], "invalid")
 
+    def test_missing_password_marks_instance_failed(self):
+        """An instance without a password is reported as failed."""
+        from confighole.utils.tasks import process_instances
+
+        instance = {
+            "name": "test",
+            "base_url": "http://test",
+            "config": {"dns": {"upstreams": ["1.1.1.1"]}},
+        }
+
+        results, failed = process_instances([instance], "sync")
+
+        assert results == []
+        assert failed == ["test"]
+
     @patch("confighole.utils.tasks.create_manager")
-    def test_dump_returns_none_when_manager_fails(self, mock_create_manager):
-        """dump_instance_data returns None when manager creation fails."""
+    def test_dump_raises_when_manager_fails(self, mock_create_manager):
+        """dump_instance_data propagates invalid configuration errors."""
         from confighole.utils.tasks import dump_instance_data
 
-        mock_create_manager.return_value = None
+        mock_create_manager.side_effect = ConfigurationError("no password")
 
-        result = dump_instance_data({"name": "test", "base_url": "http://test"})
-
-        assert result is None
+        with pytest.raises(ConfigurationError):
+            dump_instance_data({"name": "test", "base_url": "http://test"})
 
     def test_diff_returns_none_without_local_config(self):
         """diff_instance_config returns None without local config."""
