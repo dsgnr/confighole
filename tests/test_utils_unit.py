@@ -458,6 +458,14 @@ class TestDnsNormalisation:
         with pytest.raises(ConfigurationError):
             normalise_cname_records(["alias.test"])  # No comma
 
+    def test_cname_dict_missing_key_message(self):
+        """The CNAME error names the required keys and the record type."""
+        with pytest.raises(
+            ConfigurationError,
+            match="A CNAME record must contain both 'name' and 'target' keys",
+        ):
+            normalise_cname_records([{"name": "alias.test"}])
+
 
 @pytest.mark.unit
 class TestConfigNormalisation:
