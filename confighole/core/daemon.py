@@ -10,7 +10,11 @@ import threading
 from types import FrameType
 from typing import Any
 
-from confighole.utils.config import load_yaml_config, merge_global_settings
+from confighole.utils.config import (
+    filter_instances,
+    load_yaml_config,
+    merge_global_settings,
+)
 from confighole.utils.constants import DEFAULT_DAEMON_INTERVAL
 from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.tasks import process_instances
@@ -55,19 +59,7 @@ class ConfigHoleDaemon:
         Raises ConfigurationError so that a bad reload does not stop a running daemon.
         """
         config = load_yaml_config(self.config_path)
-        all_instances = merge_global_settings(config)
-
-        if not self.target_instance:
-            return all_instances
-
-        filtered = [
-            inst for inst in all_instances if inst.get("name") == self.target_instance
-        ]
-        if not filtered:
-            raise ConfigurationError(
-                f"No instance found with name '{self.target_instance}'"
-            )
-        return filtered
+        return filter_instances(merge_global_settings(config), self.target_instance)
 
     def _sync_instances(self) -> None:
         """Run a sync across all target instances."""
@@ -140,7 +132,9 @@ def get_daemon_config_from_env() -> dict[str, Any]:
 
     return {
         "enabled": env_bool("CONFIGHOLE_DAEMON_MODE"),
-        "interval": int(os.getenv("CONFIGHOLE_DAEMON_INTERVAL", "300")),
+        "interval": int(
+            os.getenv("CONFIGHOLE_DAEMON_INTERVAL", str(DEFAULT_DAEMON_INTERVAL))
+        ),
         "config_path": os.getenv("CONFIGHOLE_CONFIG_PATH"),
         "instance": os.getenv("CONFIGHOLE_INSTANCE"),
         "dry_run": env_bool("CONFIGHOLE_DRY_RUN"),

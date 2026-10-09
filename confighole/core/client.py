@@ -580,13 +580,10 @@ def create_manager(instance_config: dict[str, Any]) -> PiHoleManager | None:
     try:
         validate_instance_config(instance_config)
 
-        base_url = instance_config.get("base_url")
-        password = resolve_password(instance_config)
+        base_url = instance_config["base_url"]
+        password = resolve_password(instance_config) or ""
         timeout = instance_config.get("timeout", 30)
         verify_ssl = instance_config.get("verify_ssl", True)
-
-        if not base_url or not password:
-            return None
 
         return PiHoleManager(
             base_url=base_url,

@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from confighole.utils.constants import DEFAULT_DAEMON_INTERVAL
 from confighole.utils.exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
@@ -96,13 +97,31 @@ def merge_global_settings(config: dict[str, Any]) -> list[dict[str, Any]]:
     return [{**applicable_globals, **instance} for instance in instances]
 
 
+def filter_instances(
+    instances: list[dict[str, Any]],
+    target: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return only the instance named target, or every instance if target is empty.
+
+    Raises ConfigurationError if no instance has that name.
+    """
+    if not target:
+        return instances
+
+    filtered = [inst for inst in instances if inst.get("name") == target]
+    if not filtered:
+        raise ConfigurationError(f"No instance found with name '{target}'")
+
+    return filtered
+
+
 def get_global_daemon_settings(config: dict[str, Any]) -> dict[str, Any]:
     """Pull out daemon-specific settings from the global config section."""
     global_settings = config.get("global", {})
 
     defaults = {
         "daemon_mode": False,
-        "daemon_interval": 300,
+        "daemon_interval": DEFAULT_DAEMON_INTERVAL,
         "verbosity": 1,
         "dry_run": False,
     }

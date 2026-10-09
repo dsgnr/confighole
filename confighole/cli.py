@@ -12,6 +12,7 @@ import yaml
 
 from confighole.core.daemon import ConfigHoleDaemon, run_daemon_from_env
 from confighole.utils.config import (
+    filter_instances,
     get_global_daemon_settings,
     load_yaml_config,
     merge_global_settings,
@@ -68,22 +69,6 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     return parser
-
-
-def filter_instances(
-    instances: list[dict[str, Any]],
-    target: str | None = None,
-) -> list[dict[str, Any]]:
-    """Filter to just one instance if a target name is given."""
-    if not target:
-        return instances
-
-    filtered = [inst for inst in instances if inst.get("name") == target]
-    if not filtered:
-        logging.error("No instance found with name %s", target)
-        sys.exit(1)
-
-    return filtered
 
 
 def validate_arguments(args: argparse.Namespace) -> None:
@@ -151,7 +136,11 @@ def main() -> None:
 
     # Process instances
     all_instances = merge_global_settings(config)
-    target_instances = filter_instances(all_instances, args.instance)
+    try:
+        target_instances = filter_instances(all_instances, args.instance)
+    except ConfigurationError as exc:
+        logging.error("%s", exc)
+        sys.exit(1)
 
     if not target_instances:
         logging.error("No instances found in configuration")

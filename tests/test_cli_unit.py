@@ -285,16 +285,15 @@ class TestInstanceFiltering:
         assert len(result) == 1
         assert result[0]["name"] == "a"
 
-    def test_filter_no_match_exits(self):
-        """No match causes exit."""
-        from confighole.cli import filter_instances
+    def test_filter_no_match_raises(self):
+        """No match raises ConfigurationError."""
+        from confighole.utils.config import filter_instances
+        from confighole.utils.exceptions import ConfigurationError
 
         instances = [{"name": "a"}]
 
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(ConfigurationError):
             filter_instances(instances, "missing")
-
-        assert exc_info.value.code == 1
 
 
 @pytest.mark.unit
