@@ -6,6 +6,7 @@ import os
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from pihole_lib.models.lists import ListType
 
 from confighole.core.client import PiHoleManager, create_manager
 
@@ -377,7 +378,7 @@ class TestListOperations:
         mock_client.lists.batch_delete_lists.assert_called_once()
 
     def test_apply_list_changes(self):
-        """List changes delete old and add new."""
+        """List changes update in place without deleting the existing entry."""
         manager = PiHoleManager("http://test", "password")
         mock_client = MagicMock()
         manager._client = mock_client
@@ -399,7 +400,30 @@ class TestListOperations:
 
         manager._apply_list_changes(mock_client, changes)
 
-        mock_client.lists.batch_delete_lists.assert_called_once()
+        mock_client.lists.batch_delete_lists.assert_not_called()
+        mock_client.lists.update_list.assert_called_once()
+
+    def test_apply_list_type_change_deletes_old_type(self):
+        """A changed list type removes the remote entry of the old type."""
+        manager = PiHoleManager("http://test", "password")
+        mock_client = MagicMock()
+        manager._client = mock_client
+
+        changes = {
+            "change": {
+                "local": [{"address": "https://example.com/list.txt", "type": "allow"}],
+                "remote": [
+                    {"address": "https://example.com/list.txt", "type": "block"}
+                ],
+            }
+        }
+
+        manager._apply_list_changes(mock_client, changes)
+
+        deleted = mock_client.lists.batch_delete_lists.call_args.args[0]
+        assert [(item.item, item.type) for item in deleted] == [
+            ("https://example.com/list.txt", ListType.BLOCK)
+        ]
         mock_client.lists.update_list.assert_called_once()
 
 
@@ -455,7 +479,7 @@ class TestDomainOperations:
         mock_client.domains.batch_delete_domains.assert_called_once()
 
     def test_apply_domain_changes(self):
-        """Domain changes delete old and update."""
+        """Domain changes update in place without deleting the existing entry."""
         manager = PiHoleManager("http://test", "password")
         mock_client = MagicMock()
         manager._client = mock_client
@@ -482,7 +506,7 @@ class TestDomainOperations:
 
         manager._apply_domain_changes(mock_client, changes)
 
-        mock_client.domains.batch_delete_domains.assert_called_once()
+        mock_client.domains.batch_delete_domains.assert_not_called()
         mock_client.domains.update_domain.assert_called_once()
 
     def test_update_domains_failure_returns_false(self):
