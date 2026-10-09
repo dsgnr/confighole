@@ -60,7 +60,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--interval",
         type=int,
-        default=DEFAULT_DAEMON_INTERVAL,
+        default=None,
         help="Daemon sync interval in seconds",
     )
     parser.add_argument(
@@ -92,7 +92,7 @@ def validate_arguments(args: argparse.Namespace) -> None:
         logging.error("--dry-run can only be used with --sync or --daemon")
         sys.exit(1)
 
-    if args.interval != DEFAULT_DAEMON_INTERVAL and not args.daemon:
+    if args.interval is not None and not args.daemon:
         logging.error("--interval can only be used with --daemon")
         sys.exit(1)
 
@@ -115,7 +115,7 @@ def resolve_settings(
         if args.verbose > 0
         else global_settings.get("verbosity", 1),
         "interval": args.interval
-        if args.interval != DEFAULT_DAEMON_INTERVAL
+        if args.interval is not None
         else global_settings.get("daemon_interval", DEFAULT_DAEMON_INTERVAL),
         "dry_run": args.dry_run or global_settings.get("dry_run", False),
         "daemon_mode": args.daemon or global_settings.get("daemon_mode", False),

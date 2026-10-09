@@ -340,3 +340,14 @@ class TestSettingsResolution:
         args = Namespace(verbose=0, interval=300, dry_run=False, daemon=False)
         result = resolve_settings(args, {"dry_run": True})
         assert result["dry_run"] is True
+
+    def test_explicit_interval_overrides_config(self):
+        """An explicit --interval wins over daemon_interval, even when it equals the default."""
+        from argparse import Namespace
+
+        from confighole.cli import resolve_settings
+
+        args = Namespace(verbose=0, interval=300, dry_run=False, daemon=True)
+        result = resolve_settings(args, {"daemon_interval": 600})
+
+        assert result["interval"] == 300
