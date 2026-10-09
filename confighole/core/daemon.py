@@ -6,7 +6,7 @@ import logging
 import os
 import signal
 import sys
-import time
+import threading
 from types import FrameType
 from typing import Any
 
@@ -33,7 +33,7 @@ class ConfigHoleDaemon:
         self.interval = interval
         self.target_instance = target_instance
         self.dry_run = dry_run
-        self.running = False
+        self._stop_event = threading.Event()
 
         # Register signal handlers for graceful shutdown
         for sig in (signal.SIGTERM, signal.SIGINT):
@@ -42,7 +42,7 @@ class ConfigHoleDaemon:
     def _signal_handler(self, signum: int, frame: FrameType | None) -> None:
         """Catch SIGTERM/SIGINT and shut down cleanly."""
         logger.info("Received signal %d, shutting down gracefully...", signum)
-        self.running = False
+        self._stop_event.set()
 
     def _load_instances(self) -> list[dict[str, Any]]:
         """Load instances from the config file, filtering if needed.
@@ -100,8 +100,6 @@ class ConfigHoleDaemon:
             self.dry_run,
         )
 
-        self.running = True
-
         # A broken config at startup is fatal. Later reload failures are only logged.
         try:
             self._load_instances()
@@ -112,13 +110,13 @@ class ConfigHoleDaemon:
         logger.info("Performing initial sync...")
         self._sync_instances()
 
-        while self.running:
+        while True:
             try:
                 logger.info("Sleeping for %d seconds...", self.interval)
-                time.sleep(self.interval)
+                if self._stop_event.wait(self.interval):
+                    break
 
-                if self.running:
-                    self._sync_instances()
+                self._sync_instances()
 
             except KeyboardInterrupt:
                 logger.info("Received keyboard interrupt, shutting down...")

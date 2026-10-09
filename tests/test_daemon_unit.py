@@ -177,7 +177,7 @@ class TestDaemonInitialisation:
         assert daemon.interval == 60
         assert daemon.target_instance == "test"
         assert daemon.dry_run is True
-        assert daemon.running is False
+        assert not daemon._stop_event.is_set()
 
     def test_default_values(self):
         """Default values are applied."""
@@ -299,13 +299,30 @@ class TestDaemonSync:
 class TestDaemonSignalHandling:
     """Tests for daemon signal handling."""
 
-    def test_signal_handler_sets_running_false(self):
-        """Signal handler sets running to False."""
+    def test_signal_handler_sets_stop_event(self):
+        """Signal handler sets the stop event so a waiting daemon wakes up."""
         from confighole.core.daemon import ConfigHoleDaemon
 
         daemon = ConfigHoleDaemon(config_path="/test/config.yaml")
-        daemon.running = True
 
         daemon._signal_handler(15, None)
 
-        assert daemon.running is False
+        assert daemon._stop_event.is_set()
+
+    @patch("confighole.core.daemon.load_yaml_config")
+    @patch("confighole.core.daemon.merge_global_settings")
+    def test_run_returns_when_stop_event_is_set(self, mock_merge, mock_load):
+        """run returns without waiting for the interval once the stop event is set."""
+        import time
+
+        from confighole.core.daemon import ConfigHoleDaemon
+
+        mock_merge.return_value = []
+        daemon = ConfigHoleDaemon(config_path="/test/config.yaml", interval=300)
+        daemon._sync_instances = Mock()
+        daemon._stop_event.set()
+
+        start = time.monotonic()
+        daemon.run()
+
+        assert time.monotonic() - start < 5
