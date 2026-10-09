@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Sequence
 from types import TracebackType
-from typing import Any
+from typing import Any, TypeVar
 
 from pihole_lib.client import PiHoleClient
 from pihole_lib.models.client_mgmt import ClientBatchDeleteItem
@@ -21,6 +22,8 @@ from confighole.utils.helpers import (
 )
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class PiHoleManager:
@@ -88,75 +91,81 @@ class PiHoleManager:
             raise RuntimeError("Client not initialised")
         return self._client
 
-    def fetch_configuration(self) -> dict[str, Any]:
-        """Get the current Pi-hole config, normalised to our format."""
+    def _fetch(
+        self,
+        label: str,
+        call: Callable[[PiHoleClient], Any],
+        normalise: Callable[[Any], T],
+    ) -> T:
+        """Fetch one resource type and normalise it, logging and re-raising on failure."""
         client = self._ensure_client()
 
         try:
-            logger.debug("Fetching Pi-hole configuration...")
-            raw_config = client.config.get_config()
-            return normalise_configuration(raw_config)
+            logger.debug("Fetching Pi-hole %s...", label)
+            return normalise(call(client))
 
         except Exception as exc:
-            logger.error("Failed to fetch configuration: %s", exc)
+            logger.error("Failed to fetch %s: %s", label, exc)
             self._handle_auth_error(exc)
             raise
+
+    def _apply(
+        self,
+        label: str,
+        changes: dict[str, dict[str, Any]],
+        steps: Sequence[Callable[[PiHoleClient, dict[str, dict[str, Any]]], None]],
+    ) -> None:
+        """Run the add, change and remove steps for one resource type."""
+        client = self._ensure_client()
+
+        if not changes:
+            logger.info("No %s changes to apply", label)
+            return
+
+        for step in steps:
+            step(client, changes)
+
+        logger.info("Successfully applied %s changes", label)
+
+    def fetch_configuration(self) -> dict[str, Any]:
+        """Get the current Pi-hole config, normalised to our format."""
+        return self._fetch(
+            "configuration",
+            lambda client: client.config.get_config(),
+            normalise_configuration,
+        )
 
     def fetch_lists(self) -> list[dict[str, Any]]:
         """Get all adlists from the Pi-hole."""
-        client = self._ensure_client()
-
-        try:
-            logger.debug("Fetching Pi-hole lists...")
-            raw_lists = client.lists.get_lists()
-            return normalise_remote_lists(raw_lists)
-
-        except Exception as exc:
-            logger.error("Failed to fetch lists: %s", exc)
-            self._handle_auth_error(exc)
-            raise
+        return self._fetch(
+            "lists",
+            lambda client: client.lists.get_lists(),
+            normalise_remote_lists,
+        )
 
     def fetch_domains(self) -> list[dict[str, Any]]:
         """Get all domain entries (whitelist/blacklist) from the Pi-hole."""
-        client = self._ensure_client()
-
-        try:
-            logger.debug("Fetching Pi-hole domains...")
-            raw_domains = client.domains.get_domains()
-            return normalise_remote_domains(raw_domains)
-
-        except Exception as exc:
-            logger.error("Failed to fetch domains: %s", exc)
-            self._handle_auth_error(exc)
-            raise
+        return self._fetch(
+            "domains",
+            lambda client: client.domains.get_domains(),
+            normalise_remote_domains,
+        )
 
     def fetch_groups(self) -> list[dict[str, Any]]:
         """Get all groups from the Pi-hole."""
-        client = self._ensure_client()
-
-        try:
-            logger.debug("Fetching Pi-hole groups...")
-            raw_groups = client.groups.get_groups()
-            return normalise_remote_groups(raw_groups)
-
-        except Exception as exc:
-            logger.error("Failed to fetch groups: %s", exc)
-            self._handle_auth_error(exc)
-            raise
+        return self._fetch(
+            "groups",
+            lambda client: client.groups.get_groups(),
+            normalise_remote_groups,
+        )
 
     def fetch_clients(self) -> list[dict[str, Any]]:
         """Get all client definitions from the Pi-hole."""
-        client = self._ensure_client()
-
-        try:
-            logger.debug("Fetching Pi-hole clients...")
-            raw_clients = client.clients.get_clients()
-            return normalise_remote_clients(raw_clients)
-
-        except Exception as exc:
-            logger.error("Failed to fetch clients: %s", exc)
-            self._handle_auth_error(exc)
-            raise
+        return self._fetch(
+            "clients",
+            lambda client: client.clients.get_clients(),
+            normalise_remote_clients,
+        )
 
     def update_gravity(self) -> bool:
         """Trigger a gravity update (re-download all adlists)."""
@@ -195,17 +204,15 @@ class PiHoleManager:
         lists_changes: dict[str, dict[str, Any]],
     ) -> None:
         """Apply list changes (add/change/remove). Raises on failure."""
-        client = self._ensure_client()
-
-        if not lists_changes:
-            logger.info("No list changes to apply")
-            return
-
-        self._apply_list_additions(client, lists_changes)
-        self._apply_list_changes(client, lists_changes)
-        self._apply_list_removals(client, lists_changes)
-
-        logger.info("Successfully applied list changes")
+        self._apply(
+            "list",
+            lists_changes,
+            (
+                self._apply_list_additions,
+                self._apply_list_changes,
+                self._apply_list_removals,
+            ),
+        )
 
     def _apply_list_additions(
         self,
@@ -279,17 +286,15 @@ class PiHoleManager:
         domains_changes: dict[str, dict[str, Any]],
     ) -> None:
         """Apply domain changes (add/change/remove). Raises on failure."""
-        client = self._ensure_client()
-
-        if not domains_changes:
-            logger.info("No domain changes to apply")
-            return
-
-        self._apply_domain_additions(client, domains_changes)
-        self._apply_domain_changes(client, domains_changes)
-        self._apply_domain_removals(client, domains_changes)
-
-        logger.info("Successfully applied domain changes")
+        self._apply(
+            "domain",
+            domains_changes,
+            (
+                self._apply_domain_additions,
+                self._apply_domain_changes,
+                self._apply_domain_removals,
+            ),
+        )
 
     def _apply_domain_additions(
         self,
@@ -374,17 +379,15 @@ class PiHoleManager:
         groups_changes: dict[str, dict[str, Any]],
     ) -> None:
         """Apply group changes (add/change/remove). Raises on failure."""
-        client = self._ensure_client()
-
-        if not groups_changes:
-            logger.info("No group changes to apply")
-            return
-
-        self._apply_group_additions(client, groups_changes)
-        self._apply_group_changes(client, groups_changes)
-        self._apply_group_removals(client, groups_changes)
-
-        logger.info("Successfully applied group changes")
+        self._apply(
+            "group",
+            groups_changes,
+            (
+                self._apply_group_additions,
+                self._apply_group_changes,
+                self._apply_group_removals,
+            ),
+        )
 
     def _apply_group_additions(
         self,
@@ -438,17 +441,15 @@ class PiHoleManager:
         clients_changes: dict[str, dict[str, Any]],
     ) -> None:
         """Apply client changes (add/change/remove). Raises on failure."""
-        client = self._ensure_client()
-
-        if not clients_changes:
-            logger.info("No client changes to apply")
-            return
-
-        self._apply_client_additions(client, clients_changes)
-        self._apply_client_changes(client, clients_changes)
-        self._apply_client_removals(client, clients_changes)
-
-        logger.info("Successfully applied client changes")
+        self._apply(
+            "client",
+            clients_changes,
+            (
+                self._apply_client_additions,
+                self._apply_client_changes,
+                self._apply_client_removals,
+            ),
+        )
 
     def _apply_client_additions(
         self,
