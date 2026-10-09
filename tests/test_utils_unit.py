@@ -315,6 +315,13 @@ class TestConfigDiff:
 class TestListsDiff:
     """Tests for Pi-hole lists diff calculation."""
 
+    def test_missing_required_key_raises(self):
+        """A local list without a type is rejected before any API write."""
+        local = [{"address": "https://example.com/list.txt"}]
+
+        with pytest.raises(ConfigurationError, match=r"https://example\.com/list\.txt"):
+            calculate_lists_diff(local, [])
+
     def test_identical_lists_no_diff(self):
         """Identical lists produce empty diff."""
         lists = [SAMPLE_LIST]

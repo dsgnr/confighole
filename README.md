@@ -253,6 +253,8 @@ Configure daemon mode using environment variables (useful for Docker):
 
 ## Configuration
 
+Entries in `lists`, `domains`, `groups` and `clients` must include their identifying keys: `address` and `type` for lists, `domain`, `type` and `kind` for domains, `name` for groups and `client` for clients. During `--sync`, a resource with a missing key is reported as an error and that resource is not written. Resources are synchronised one at a time, so other resources can still be applied.
+
 ### Global settings
 
 Apply to all instances unless overridden:
