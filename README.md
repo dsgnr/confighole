@@ -135,7 +135,7 @@ instances:
 >
 > lists: &lists
 >   - address: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
->     type: deny
+>     type: block
 >     comment: StevenBlack's Unified Hosts List
 >     groups: [0]
 >     enabled: true
@@ -215,9 +215,9 @@ $ confighole -c config.yaml --daemon
 ### Exit codes
 
 - `0`: the operation completed, or there was nothing to change.
-- `1`: the configuration could not be loaded, the `--instance` name does not exist, or `--sync` failed for one or more instances. The names of failed instances are logged.
+- `1`: the configuration could not be loaded, the `--instance` name does not exist, an instance has no `base_url` or password, or `--sync` failed for one or more instances. The names of failed instances are logged.
 
-`--dump` and `--diff` do not report connection failures through the exit code. In daemon mode, a failed sync is logged and the daemon keeps running.
+`--dump` and `--diff` do not report connection failures through the exit code. A missing `base_url` or password is reported for every operation, but only for instances that need to connect. An instance with no local configuration is skipped by `--diff` and `--sync`. In daemon mode, a failed sync is logged and the daemon keeps running.
 
 ## Daemon Mode
 
@@ -266,7 +266,7 @@ An empty list (for example `lists: []`) removes every remote entry of that resou
 
 Apply to all instances unless overridden:
 
-- `timeout` - Tor request timeout in seconds
+- `timeout` - Request timeout in seconds
 - `verify_ssl` - To enable or disable TLS verification
 - `password` / `password_env` - For default authentication
 
@@ -297,7 +297,7 @@ The subscribed allowlist or blocklists:
 ```yaml
 lists:
   - address: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
-    type: deny
+    type: block
     comment: StevenBlack's Unified Hosts List
     groups: [0]
     enabled: true
