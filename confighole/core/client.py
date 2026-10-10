@@ -258,13 +258,17 @@ class PiHoleManager:
         client: PiHoleClient,
         lists_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Update existing lists (delete old version, add new)."""
+        """Update existing lists in place, removing the old entry only if its type changed."""
         if "change" not in lists_changes:
             return
 
+        local_types = {
+            item["address"]: item["type"] for item in lists_changes["change"]["local"]
+        }
         items_to_delete = [
             BatchDeleteItem(item=item["address"], type=ListType(item["type"]))
             for item in lists_changes["change"]["remote"]
+            if local_types[item["address"]] != item["type"]
         ]
 
         if items_to_delete:
@@ -357,25 +361,9 @@ class PiHoleManager:
         client: PiHoleClient,
         domains_changes: dict[str, dict[str, Any]],
     ) -> None:
-        """Update existing domains (delete old, add new)."""
+        """Update existing domains in place. Type and kind are part of the diff key."""
         if "change" not in domains_changes:
             return
-
-        items_to_delete = [
-            DomainBatchDeleteItem(
-                item=item["domain"],
-                type=DomainType(item["type"]),
-                kind=DomainKind(item["kind"]),
-            )
-            for item in domains_changes["change"]["remote"]
-        ]
-
-        if items_to_delete:
-            client.domains.batch_delete_domains(items_to_delete)
-            logger.debug(
-                "Deleted old domain versions: %s",
-                [item.item for item in items_to_delete],
-            )
 
         for domain_item in domains_changes["change"]["local"]:
             client.domains.update_domain(

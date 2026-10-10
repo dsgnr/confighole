@@ -5,18 +5,32 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from confighole.utils.exceptions import ConfigurationError
+
 
 def _calculate_items_diff(
     local_items: list[dict[str, Any]],
     remote_items: list[dict[str, Any]] | None,
     key_func: Callable[[dict[str, Any]], Any],
     compare_fields: list[str],
+    required_keys: tuple[str, ...],
 ) -> dict[str, dict[str, Any]]:
     """Compare two lists of items and figure out what's different.
 
     Returns a dict with 'add', 'change', and 'remove' keys showing
     what needs to happen to make remote match local.
+
+    Raises ConfigurationError if a local item lacks one of required_keys.
+    The first required key identifies the entry in the error message.
     """
+    for item in local_items:
+        missing = [key for key in required_keys if key not in item]
+        if missing:
+            name = item.get(required_keys[0], "<unnamed>")
+            raise ConfigurationError(
+                f"Entry {name!r} is missing required key(s): {', '.join(missing)}"
+            )
+
     remote_items = remote_items or []
 
     local_by_key = {key_func(item): item for item in local_items}
@@ -96,6 +110,7 @@ def calculate_lists_diff(
         remote_lists,
         key_func=lambda item: item["address"],
         compare_fields=["type", "comment", "groups", "enabled"],
+        required_keys=("address", "type"),
     )
 
 
@@ -109,6 +124,7 @@ def calculate_domains_diff(
         remote_domains,
         key_func=lambda item: (item["domain"], item["type"], item["kind"]),
         compare_fields=["comment", "groups", "enabled"],
+        required_keys=("domain", "type", "kind"),
     )
 
 
@@ -116,13 +132,26 @@ def calculate_groups_diff(
     local_groups: list[dict[str, Any]],
     remote_groups: list[dict[str, Any]] | None,
 ) -> dict[str, dict[str, Any]]:
-    """Compare local and remote groups, keyed by name."""
-    return _calculate_items_diff(
+    """Compare local and remote groups, keyed by name.
+
+    The default group (id 0) is never scheduled for removal.
+    """
+    result = _calculate_items_diff(
         local_groups,
         remote_groups,
         key_func=lambda item: item["name"],
         compare_fields=["comment", "enabled"],
+        required_keys=("name",),
     )
+
+    if "remove" in result:
+        removable = [item for item in result["remove"]["remote"] if item.get("id") != 0]
+        if removable:
+            result["remove"]["remote"] = removable
+        else:
+            del result["remove"]
+
+    return result
 
 
 def calculate_clients_diff(
@@ -135,6 +164,7 @@ def calculate_clients_diff(
         remote_clients,
         key_func=lambda item: item["client"],
         compare_fields=["comment", "groups"],
+        required_keys=("client",),
     )
 
 
