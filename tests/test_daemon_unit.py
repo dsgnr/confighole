@@ -7,6 +7,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from confighole.utils.exceptions import ConfigurationError
+
 
 @pytest.mark.unit
 class TestDaemonEnvConfig:
@@ -175,7 +177,14 @@ class TestDaemonInitialisation:
         assert daemon.interval == 60
         assert daemon.target_instance == "test"
         assert daemon.dry_run is True
-        assert daemon.running is False
+        assert not daemon._stop_event.is_set()
+
+    def test_rejects_interval_below_one_second(self):
+        """An interval below one second is rejected when the daemon is created."""
+        from confighole.core.daemon import ConfigHoleDaemon
+
+        with pytest.raises(ConfigurationError):
+            ConfigHoleDaemon(config_path="/test/config.yaml", interval=0)
 
     def test_default_values(self):
         """Default values are applied."""
@@ -226,8 +235,8 @@ class TestDaemonInstanceLoading:
 
     @patch("confighole.core.daemon.load_yaml_config")
     @patch("confighole.core.daemon.merge_global_settings")
-    def test_target_not_found_exits(self, mock_merge, mock_load):
-        """Missing target instance exits."""
+    def test_target_not_found_raises(self, mock_merge, mock_load):
+        """Missing target instance raises ConfigurationError."""
         from confighole.core.daemon import ConfigHoleDaemon
 
         mock_load.return_value = {"global": {}, "instances": []}
@@ -238,10 +247,18 @@ class TestDaemonInstanceLoading:
             target_instance="missing",
         )
 
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(ConfigurationError):
             daemon._load_instances()
 
-        assert exc_info.value.code == 1
+    @patch("confighole.core.daemon.load_yaml_config")
+    def test_sync_survives_reload_failure(self, mock_load):
+        """A failed reload is logged and the sync cycle is skipped."""
+        from confighole.core.daemon import ConfigHoleDaemon
+
+        mock_load.side_effect = ConfigurationError("bad config")
+
+        daemon = ConfigHoleDaemon(config_path="/test/config.yaml")
+        daemon._sync_instances()
 
 
 @pytest.mark.unit
@@ -289,13 +306,30 @@ class TestDaemonSync:
 class TestDaemonSignalHandling:
     """Tests for daemon signal handling."""
 
-    def test_signal_handler_sets_running_false(self):
-        """Signal handler sets running to False."""
+    def test_signal_handler_sets_stop_event(self):
+        """Signal handler sets the stop event so a waiting daemon wakes up."""
         from confighole.core.daemon import ConfigHoleDaemon
 
         daemon = ConfigHoleDaemon(config_path="/test/config.yaml")
-        daemon.running = True
 
         daemon._signal_handler(15, None)
 
-        assert daemon.running is False
+        assert daemon._stop_event.is_set()
+
+    @patch("confighole.core.daemon.load_yaml_config")
+    @patch("confighole.core.daemon.merge_global_settings")
+    def test_run_returns_when_stop_event_is_set(self, mock_merge, mock_load):
+        """run returns without waiting for the interval once the stop event is set."""
+        import time
+
+        from confighole.core.daemon import ConfigHoleDaemon
+
+        mock_merge.return_value = []
+        daemon = ConfigHoleDaemon(config_path="/test/config.yaml", interval=300)
+        daemon._sync_instances = Mock()
+        daemon._stop_event.set()
+
+        start = time.monotonic()
+        daemon.run()
+
+        assert time.monotonic() - start < 5

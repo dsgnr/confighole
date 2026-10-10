@@ -29,7 +29,7 @@ def normalise_dns_hosts(hosts: list[Any]) -> list[dict[str, str]]:
         if isinstance(entry, dict):
             if not required_keys <= entry.keys():
                 raise ConfigurationError(
-                    f"A host record must contain both {' and '.join(required_keys)} keys"
+                    "A host record must contain both 'ip' and 'host' keys"
                 )
             normalised.append(entry)
         elif isinstance(entry, str) and " " in entry:
@@ -55,14 +55,14 @@ def normalise_cname_records(cnames: list[Any]) -> list[dict[str, str]]:
         if isinstance(entry, dict):
             if not required_keys <= entry.keys():
                 raise ConfigurationError(
-                    f"A cname record must contain both {' and '.join(required_keys)} keys"
+                    "A CNAME record must contain both 'name' and 'target' keys"
                 )
             normalised.append(entry)
         elif isinstance(entry, str) and "," in entry:
             name, target = entry.split(",", 1)
             normalised.append({"name": name.strip(), "target": target.strip()})
         else:
-            raise ConfigurationError("Failed to parse the hosts list")
+            raise ConfigurationError("Failed to parse the CNAME records list")
 
     return normalised
 

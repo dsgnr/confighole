@@ -144,6 +144,13 @@ class TestConfigMerging:
         config = {"global": {"timeout": 30}, "instances": []}
         assert merge_global_settings(config) == []
 
+    def test_empty_sections_treated_as_empty(self):
+        """Empty global and instances sections, which parse as None, are accepted."""
+        config = {"global": None, "instances": None}
+
+        assert merge_global_settings(config) == []
+        assert get_global_daemon_settings(config)["daemon_interval"] == 300
+
 
 @pytest.mark.unit
 class TestDaemonSettings:
@@ -187,31 +194,31 @@ class TestDaemonSettings:
 class TestYamlLoading:
     """Tests for YAML configuration loading."""
 
-    def test_missing_file_exits(self):
-        """Missing file causes system exit."""
-        with pytest.raises(SystemExit):
+    def test_missing_file_raises(self):
+        """Missing file raises ConfigurationError."""
+        with pytest.raises(ConfigurationError):
             load_yaml_config("nonexistent.yaml")
 
-    def test_invalid_yaml_exits(self):
-        """Invalid YAML causes system exit."""
+    def test_invalid_yaml_raises(self):
+        """Invalid YAML raises ConfigurationError."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("invalid: yaml: [unclosed")
             temp_file = f.name
 
         try:
-            with pytest.raises(SystemExit):
+            with pytest.raises(ConfigurationError):
                 load_yaml_config(temp_file)
         finally:
             os.unlink(temp_file)
 
-    def test_non_dict_yaml_exits(self):
-        """YAML that isn't a dict causes system exit."""
+    def test_non_dict_yaml_raises(self):
+        """YAML that isn't a dict raises ConfigurationError."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("- item1\n- item2")
             temp_file = f.name
 
         try:
-            with pytest.raises(SystemExit):
+            with pytest.raises(ConfigurationError):
                 load_yaml_config(temp_file)
         finally:
             os.unlink(temp_file)
@@ -450,6 +457,14 @@ class TestDnsNormalisation:
 
         with pytest.raises(ConfigurationError):
             normalise_cname_records(["alias.test"])  # No comma
+
+    def test_cname_dict_missing_key_message(self):
+        """The CNAME error names the required keys and the record type."""
+        with pytest.raises(
+            ConfigurationError,
+            match="A CNAME record must contain both 'name' and 'target' keys",
+        ):
+            normalise_cname_records([{"name": "alias.test"}])
 
 
 @pytest.mark.unit

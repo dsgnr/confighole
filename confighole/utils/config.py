@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from typing import Any
 
 import yaml
 
+from confighole.utils.constants import DEFAULT_DAEMON_INTERVAL
 from confighole.utils.exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ def validate_instance_config(instance_config: dict[str, Any]) -> None:
 
 
 def load_yaml_config(file_path: str) -> dict[str, Any]:
-    """Load a YAML config file. Exits with code 1 if it fails."""
+    """Load a YAML config file. Raises ConfigurationError if it fails."""
     try:
         with open(file_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
@@ -72,8 +72,7 @@ def load_yaml_config(file_path: str) -> dict[str, Any]:
         return config
 
     except Exception as exc:
-        logger.error("Failed to load config %s: %s", file_path, exc)
-        sys.exit(1)
+        raise ConfigurationError(f"Failed to load config {file_path}: {exc}") from exc
 
 
 def merge_global_settings(config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -82,8 +81,9 @@ def merge_global_settings(config: dict[str, Any]) -> list[dict[str, Any]]:
     Daemon-specific settings (daemon_mode, daemon_interval, etc.) are
     intentionally excluded since they don't belong on individual instances.
     """
-    global_settings = config.get("global", {})
-    instances = config.get("instances", [])
+    # An empty YAML section parses as None rather than a missing key.
+    global_settings = config.get("global") or {}
+    instances = config.get("instances") or []
 
     # Settings that don't apply to individual instances
     daemon_only_settings = frozenset(
@@ -98,13 +98,31 @@ def merge_global_settings(config: dict[str, Any]) -> list[dict[str, Any]]:
     return [{**applicable_globals, **instance} for instance in instances]
 
 
+def filter_instances(
+    instances: list[dict[str, Any]],
+    target: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return only the instance named target, or every instance if target is empty.
+
+    Raises ConfigurationError if no instance has that name.
+    """
+    if not target:
+        return instances
+
+    filtered = [inst for inst in instances if inst.get("name") == target]
+    if not filtered:
+        raise ConfigurationError(f"No instance found with name '{target}'")
+
+    return filtered
+
+
 def get_global_daemon_settings(config: dict[str, Any]) -> dict[str, Any]:
     """Pull out daemon-specific settings from the global config section."""
-    global_settings = config.get("global", {})
+    global_settings = config.get("global") or {}
 
     defaults = {
         "daemon_mode": False,
-        "daemon_interval": 300,
+        "daemon_interval": DEFAULT_DAEMON_INTERVAL,
         "verbosity": 1,
         "dry_run": False,
     }
