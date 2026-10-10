@@ -67,7 +67,7 @@ class TestCLIMain:
 
         mock_load.return_value = {"global": {}, "instances": []}
         mock_merge.return_value = [{"name": "test"}]
-        mock_process.return_value = [{"name": "test", "config": {}}]
+        mock_process.return_value = ([{"name": "test", "config": {}}], [])
 
         with patch("sys.argv", ["confighole", "-c", "test.yaml", "--dump"]):
             try:
@@ -139,7 +139,7 @@ class TestCLIMain:
 
         mock_load.return_value = {"global": {}, "instances": []}
         mock_merge.return_value = [{"name": "test"}]
-        mock_process.return_value = []
+        mock_process.return_value = ([], [])
 
         with patch("sys.argv", ["confighole", "-c", "test.yaml", "--dump"]):
             with patch("logging.info") as mock_log:
@@ -149,6 +149,23 @@ class TestCLIMain:
                     pass
 
         mock_log.assert_called_with("No results to display")
+
+    @patch("confighole.cli.load_yaml_config")
+    @patch("confighole.cli.merge_global_settings")
+    @patch("confighole.cli.process_instances")
+    def test_failed_instance_exits_nonzero(self, mock_process, mock_merge, mock_load):
+        """A failed instance makes the CLI exit with code 1."""
+        from confighole.cli import main
+
+        mock_load.return_value = {"global": {}, "instances": []}
+        mock_merge.return_value = [{"name": "test"}]
+        mock_process.return_value = ([], ["test"])
+
+        with patch("sys.argv", ["confighole", "-c", "test.yaml", "--sync"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
 
 
 @pytest.mark.unit

@@ -272,6 +272,7 @@ class TestDaemonSync:
 
         daemon = ConfigHoleDaemon(config_path="/test/config.yaml")
         daemon._load_instances = Mock(return_value=[{"name": "test"}])
+        mock_process.return_value = ([], [])
 
         daemon._sync_instances()
 
@@ -284,6 +285,7 @@ class TestDaemonSync:
 
         daemon = ConfigHoleDaemon(config_path="/test/config.yaml", dry_run=True)
         daemon._load_instances = Mock(return_value=[{"name": "test"}])
+        mock_process.return_value = ([], [])
 
         daemon._sync_instances()
 

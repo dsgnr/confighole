@@ -9,6 +9,7 @@ import pytest
 from pihole_lib.models.lists import ListType
 
 from confighole.core.client import PiHoleManager, create_manager
+from confighole.utils.exceptions import ConfigurationError
 
 
 @pytest.mark.unit
@@ -122,83 +123,45 @@ class TestPiHoleManagerOperations:
         with pytest.raises(RuntimeError, match="Client not initialised"):
             manager.update_clients({"add": {}})
 
-    def test_update_config_empty_changes_returns_true(self):
+    def test_update_config_empty_changes_returns_none(self):
         """Empty changes returns True without calling API."""
         manager = PiHoleManager("http://test", "password")
         manager._client = Mock()
 
-        result = manager.update_configuration({})
-
-        assert result is True
+        assert manager.update_configuration({}) is None
         manager._client.config.update_config.assert_not_called()
 
-    def test_update_lists_empty_changes_returns_true(self):
+    def test_update_lists_empty_changes_returns_none(self):
         """Empty list changes returns True without calling API."""
         manager = PiHoleManager("http://test", "password")
         manager._client = Mock()
 
-        result = manager.update_lists({})
+        assert manager.update_lists({}) is None
 
-        assert result is True
-
-    def test_update_domains_empty_changes_returns_true(self):
+    def test_update_domains_empty_changes_returns_none(self):
         """Empty domain changes returns True without calling API."""
         manager = PiHoleManager("http://test", "password")
         manager._client = Mock()
 
-        result = manager.update_domains({})
+        assert manager.update_domains({}) is None
 
-        assert result is True
-
-    def test_update_groups_empty_changes_returns_true(self):
+    def test_update_groups_empty_changes_returns_none(self):
         """Empty group changes returns True without calling API."""
         manager = PiHoleManager("http://test", "password")
         manager._client = Mock()
 
-        result = manager.update_groups({})
+        assert manager.update_groups({}) is None
 
-        assert result is True
-
-    def test_update_clients_empty_changes_returns_true(self):
+    def test_update_clients_empty_changes_returns_none(self):
         """Empty client changes returns True without calling API."""
         manager = PiHoleManager("http://test", "password")
         manager._client = Mock()
 
-        result = manager.update_clients({})
-
-        assert result is True
-
-    def test_update_config_dry_run_returns_true(self):
-        """Dry run returns True without calling API."""
-        manager = PiHoleManager("http://test", "password")
-        manager._client = Mock()
-
-        result = manager.update_configuration({"dns": {}}, dry_run=True)
-
-        assert result is True
-        manager._client.config.update_config.assert_not_called()
-
-    def test_update_lists_dry_run_returns_true(self):
-        """Dry run returns True without calling API."""
-        manager = PiHoleManager("http://test", "password")
-        manager._client = Mock()
-
-        result = manager.update_lists({"add": {"local": []}}, dry_run=True)
-
-        assert result is True
-
-    def test_update_domains_dry_run_returns_true(self):
-        """Dry run returns True without calling API."""
-        manager = PiHoleManager("http://test", "password")
-        manager._client = Mock()
-
-        result = manager.update_domains({"add": {"local": []}}, dry_run=True)
-
-        assert result is True
+        assert manager.update_clients({}) is None
 
     @patch("confighole.core.client.PiHoleClient")
-    def test_update_config_failure_returns_false(self, mock_client_class):
-        """API failure returns False."""
+    def test_update_config_failure_raises(self, mock_client_class):
+        """API failure raises."""
         mock_client = Mock()
         mock_client.config.update_config.side_effect = Exception("API Error")
         mock_client_class.return_value = mock_client
@@ -206,30 +169,27 @@ class TestPiHoleManagerOperations:
         manager = PiHoleManager("http://test", "password")
         manager._client = mock_client
 
-        result = manager.update_configuration({"dns": {}})
-
-        assert result is False
+        with pytest.raises(Exception, match="API Error"):
+            manager.update_configuration({"dns": {}})
 
 
 @pytest.mark.unit
 class TestCreateManager:
     """Tests for create_manager factory function."""
 
-    def test_missing_base_url_returns_none(self):
-        """Missing base_url returns None."""
+    def test_missing_base_url_raises(self):
+        """Missing base_url raises ConfigurationError."""
         config = {"name": "test", "password": "secret"}
 
-        result = create_manager(config)
+        with pytest.raises(ConfigurationError, match="base_url"):
+            create_manager(config)
 
-        assert result is None
-
-    def test_missing_password_returns_none(self):
-        """Missing password returns None."""
+    def test_missing_password_raises(self):
+        """Missing password raises ConfigurationError."""
         config = {"name": "test", "base_url": "http://test"}
 
-        result = create_manager(config)
-
-        assert result is None
+        with pytest.raises(ConfigurationError, match="no password"):
+            create_manager(config)
 
     def test_valid_config_returns_manager(self):
         """Valid config returns PiHoleManager."""
@@ -264,17 +224,16 @@ class TestCreateManager:
         finally:
             del os.environ["TEST_PW"]
 
-    def test_missing_env_password_returns_none(self):
-        """Missing environment variable returns None."""
+    def test_missing_env_password_raises(self):
+        """Missing environment variable raises ConfigurationError."""
         config = {
             "name": "test",
             "base_url": "http://test",
             "password": "${MISSING_VAR}",
         }
 
-        result = create_manager(config)
-
-        assert result is None
+        with pytest.raises(ConfigurationError, match="no password"):
+            create_manager(config)
 
     def test_custom_timeout_and_ssl(self):
         """Custom timeout and SSL settings are applied."""
@@ -509,8 +468,8 @@ class TestDomainOperations:
         mock_client.domains.batch_delete_domains.assert_not_called()
         mock_client.domains.update_domain.assert_called_once()
 
-    def test_update_domains_failure_returns_false(self):
-        """API failure returns False."""
+    def test_update_domains_failure_raises(self):
+        """API failure raises."""
         manager = PiHoleManager("http://test", "password")
         mock_client = MagicMock()
         mock_client.domains.add_domain.side_effect = Exception("API Error")
@@ -528,9 +487,8 @@ class TestDomainOperations:
             }
         }
 
-        result = manager.update_domains(changes)
-
-        assert result is False
+        with pytest.raises(Exception, match="API Error"):
+            manager.update_domains(changes)
 
 
 @pytest.mark.unit
@@ -607,8 +565,8 @@ class TestGroupOperations:
 
         mock_client.groups.update_group.assert_called_once()
 
-    def test_update_groups_failure_returns_false(self):
-        """API failure returns False."""
+    def test_update_groups_failure_raises(self):
+        """API failure raises."""
         manager = PiHoleManager("http://test", "password")
         mock_client = MagicMock()
         mock_client.groups.create_group.side_effect = Exception("API Error")
@@ -624,9 +582,8 @@ class TestGroupOperations:
             }
         }
 
-        result = manager.update_groups(changes)
-
-        assert result is False
+        with pytest.raises(Exception, match="API Error"):
+            manager.update_groups(changes)
 
 
 @pytest.mark.unit
@@ -703,8 +660,8 @@ class TestClientOperations:
 
         mock_client.clients.update_client.assert_called_once()
 
-    def test_update_clients_failure_returns_false(self):
-        """API failure returns False."""
+    def test_update_clients_failure_raises(self):
+        """API failure raises."""
         manager = PiHoleManager("http://test", "password")
         mock_client = MagicMock()
         mock_client.clients.add_client.side_effect = Exception("API Error")
@@ -720,9 +677,8 @@ class TestClientOperations:
             }
         }
 
-        result = manager.update_clients(changes)
-
-        assert result is False
+        with pytest.raises(Exception, match="API Error"):
+            manager.update_clients(changes)
 
 
 @pytest.mark.unit

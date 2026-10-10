@@ -599,16 +599,30 @@ class TestTaskOperations:
         with pytest.raises(ValueError, match="Unknown operation"):
             process_instances([{"name": "test"}], "invalid")
 
+    def test_missing_password_marks_instance_failed(self):
+        """An instance without a password is reported as failed."""
+        from confighole.utils.tasks import process_instances
+
+        instance = {
+            "name": "test",
+            "base_url": "http://test",
+            "config": {"dns": {"upstreams": ["1.1.1.1"]}},
+        }
+
+        results, failed = process_instances([instance], "sync")
+
+        assert results == []
+        assert failed == ["test"]
+
     @patch("confighole.utils.tasks.create_manager")
-    def test_dump_returns_none_when_manager_fails(self, mock_create_manager):
-        """dump_instance_data returns None when manager creation fails."""
+    def test_dump_raises_when_manager_fails(self, mock_create_manager):
+        """dump_instance_data propagates invalid configuration errors."""
         from confighole.utils.tasks import dump_instance_data
 
-        mock_create_manager.return_value = None
+        mock_create_manager.side_effect = ConfigurationError("no password")
 
-        result = dump_instance_data({"name": "test", "base_url": "http://test"})
-
-        assert result is None
+        with pytest.raises(ConfigurationError):
+            dump_instance_data({"name": "test", "base_url": "http://test"})
 
     def test_diff_returns_none_without_local_config(self):
         """diff_instance_config returns None without local config."""
@@ -1220,3 +1234,51 @@ class TestSyncListConfigWithGravity:
 
         assert result is not None
         mock_manager.update_gravity.assert_not_called()
+
+
+@pytest.mark.unit
+class TestSyncSession:
+    """Tests for sharing one connection across sync steps."""
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_sync_connects_once_for_all_steps(self, mock_create_manager):
+        """sync builds one manager and passes it to every step."""
+        from confighole.utils.tasks import sync
+
+        mock_manager = MagicMock()
+        mock_create_manager.return_value = mock_manager
+        config = {
+            "name": "test",
+            "base_url": "http://test",
+            "lists": [{"address": "https://example.com/list.txt", "type": "block"}],
+            "domains": [{"domain": "ads.example.com", "type": "deny", "kind": "exact"}],
+        }
+
+        sync(config)
+
+        mock_create_manager.assert_called_once()
+        mock_manager.fetch_lists.assert_called_once()
+        mock_manager.fetch_domains.assert_called_once()
+
+    @patch("confighole.utils.tasks.create_manager")
+    def test_empty_list_removes_remote_entries(self, mock_create_manager):
+        """An empty lists value marks every remote entry for removal."""
+        from confighole.utils.tasks import sync_list_config
+
+        mock_manager = MagicMock()
+        mock_manager.fetch_lists.return_value = [
+            {
+                "address": "https://example.com/list.txt",
+                "type": "block",
+                "comment": None,
+                "groups": [0],
+                "enabled": True,
+            }
+        ]
+        mock_create_manager.return_value = mock_manager
+        config = {"name": "test", "base_url": "http://test", "lists": []}
+
+        result = sync_list_config(config, dry_run=False)
+
+        assert "remove" in result["changes"]
+        mock_manager.update_lists.assert_called_once()

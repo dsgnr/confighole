@@ -71,7 +71,10 @@ class ConfigHoleDaemon:
                 return
 
             logger.info("Starting sync for %d instance(s)", len(instances))
-            results = process_instances(instances, "sync", dry_run=self.dry_run)
+            results, failed = process_instances(instances, "sync", dry_run=self.dry_run)
+
+            if failed:
+                logger.error("Sync failed for: %s", ", ".join(failed))
 
             if results:
                 action = "would be applied" if self.dry_run else "applied"
