@@ -147,22 +147,6 @@ class TestPiHoleClient:
 
             assert isinstance(lists, list)
 
-    def test_update_configuration_dry_run(self, pihole_container):
-        """Dry run doesn't modify configuration."""
-        manager = PiHoleManager(
-            base_url=PIHOLE_BASE_URL,
-            password=PIHOLE_TEST_PASSWORD,
-            verify_ssl=False,
-        )
-
-        with manager:
-            result = manager.update_configuration(
-                {"dns": {"upstreams": ["8.8.8.8"]}},
-                dry_run=True,
-            )
-
-            assert result is True
-
     def test_update_configuration_real(self, pihole_container):
         """Configuration is updated and restored."""
         manager = PiHoleManager(
@@ -176,20 +160,13 @@ class TestPiHoleClient:
             original_upstreams = original["dns"]["upstreams"]
 
             new_upstreams = ["1.1.1.1", "1.0.0.1"]
-            result = manager.update_configuration(
-                {"dns": {"upstreams": new_upstreams}},
-                dry_run=False,
-            )
-            assert result is True
+            manager.update_configuration({"dns": {"upstreams": new_upstreams}})
 
             updated = manager.fetch_configuration()
             assert updated["dns"]["upstreams"] == new_upstreams
 
             # Restore
-            manager.update_configuration(
-                {"dns": {"upstreams": original_upstreams}},
-                dry_run=False,
-            )
+            manager.update_configuration({"dns": {"upstreams": original_upstreams}})
 
 
 @pytest.mark.integration
@@ -316,7 +293,7 @@ class TestTaskOperations:
         config = load_yaml_config(TEST_CONFIG_PATH)
         instances = merge_global_settings(config)
 
-        results = process_instances(instances, "dump")
+        results, _ = process_instances(instances, "dump")
 
         assert isinstance(results, list)
         if results:
@@ -329,7 +306,7 @@ class TestTaskOperations:
 
         instances[0]["config"]["dns"]["upstreams"] = ["8.8.8.8"]
 
-        results = process_instances(instances, "diff")
+        results, _ = process_instances(instances, "diff")
 
         assert isinstance(results, list)
 
@@ -340,7 +317,7 @@ class TestTaskOperations:
 
         instances[0]["config"]["dns"]["upstreams"] = ["8.8.8.8"]
 
-        results = process_instances(instances, "sync", dry_run=True)
+        results, _ = process_instances(instances, "sync", dry_run=True)
 
         assert isinstance(results, list)
 
@@ -640,6 +617,7 @@ class TestErrorHandling:
 
     def test_invalid_instance_config(self):
         """Invalid instance config is handled."""
-        results = process_instances([{"name": "invalid"}], "dump")
+        results, failed = process_instances([{"name": "invalid"}], "dump")
 
         assert results == []
+        assert failed == ["invalid"]
