@@ -397,7 +397,7 @@ class TestDaemon:
         thread.start()
 
         time.sleep(1)
-        daemon.running = False
+        daemon._stop_event.set()
         thread.join(timeout=5)
 
         assert not thread.is_alive()

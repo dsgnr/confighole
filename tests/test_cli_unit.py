@@ -302,16 +302,15 @@ class TestInstanceFiltering:
         assert len(result) == 1
         assert result[0]["name"] == "a"
 
-    def test_filter_no_match_exits(self):
-        """No match causes exit."""
-        from confighole.cli import filter_instances
+    def test_filter_no_match_raises(self):
+        """No match raises ConfigurationError."""
+        from confighole.utils.config import filter_instances
+        from confighole.utils.exceptions import ConfigurationError
 
         instances = [{"name": "a"}]
 
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(ConfigurationError):
             filter_instances(instances, "missing")
-
-        assert exc_info.value.code == 1
 
 
 @pytest.mark.unit
@@ -357,3 +356,14 @@ class TestSettingsResolution:
         args = Namespace(verbose=0, interval=300, dry_run=False, daemon=False)
         result = resolve_settings(args, {"dry_run": True})
         assert result["dry_run"] is True
+
+    def test_explicit_interval_overrides_config(self):
+        """An explicit --interval wins over daemon_interval, even when it equals the default."""
+        from argparse import Namespace
+
+        from confighole.cli import resolve_settings
+
+        args = Namespace(verbose=0, interval=300, dry_run=False, daemon=True)
+        result = resolve_settings(args, {"daemon_interval": 600})
+
+        assert result["interval"] == 300

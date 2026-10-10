@@ -223,6 +223,8 @@ $ confighole -c config.yaml --daemon
 
 Daemon mode is useful if you want your Pi-hole instances to drift as little as possible. It periodically compares the live state with your config and applies any differences.
 
+The config file is read again on every sync cycle. If it is invalid at startup, the daemon exits with code 1. If it becomes invalid while running, the error is logged, that cycle is skipped and the daemon keeps running.
+
 ```bash
 # Default interval (5 minutes)
 $ confighole -c config.yaml --daemon
@@ -244,6 +246,8 @@ $ confighole -c config.yaml --daemon --instance home --interval 180
 
 **Example:** If your config sets `daemon_interval: 600` but you run with `--interval 300`, the CLI value wins.
 
+The interval must be at least 1 second. A smaller value is rejected at startup with exit code 1.
+
 
 ### Environment Variables
 
@@ -261,6 +265,8 @@ Configure daemon mode using environment variables (useful for Docker):
 ## Configuration
 
 An empty list (for example `lists: []`) removes every remote entry of that resource. An omitted key leaves the resource unchanged.
+
+Entries in `lists`, `domains`, `groups` and `clients` must include their identifying keys: `address` and `type` for lists, `domain`, `type` and `kind` for domains, `name` for groups and `client` for clients. During `--sync`, a resource with a missing key is reported as an error and that resource is not written. Resources are synchronised one at a time, so other resources can still be applied.
 
 ### Global settings
 
@@ -338,6 +344,8 @@ groups:
     comment: "IoT devices with strict filtering"
     enabled: true
 ```
+
+The default group (id 0) is never removed by a sync, even when it is missing from `groups`.
 
 ### Client configuration
 

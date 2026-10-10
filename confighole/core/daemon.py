@@ -6,12 +6,17 @@ import logging
 import os
 import signal
 import sys
-import time
+import threading
 from types import FrameType
 from typing import Any
 
-from confighole.utils.config import load_yaml_config, merge_global_settings
+from confighole.utils.config import (
+    filter_instances,
+    load_yaml_config,
+    merge_global_settings,
+)
 from confighole.utils.constants import DEFAULT_DAEMON_INTERVAL
+from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.tasks import process_instances
 
 logger = logging.getLogger(__name__)
@@ -28,11 +33,16 @@ class ConfigHoleDaemon:
         dry_run: bool = False,
     ) -> None:
         """Set up the daemon with config path and sync interval."""
+        if interval < 1:
+            raise ConfigurationError(
+                f"Daemon interval must be at least 1 second, got {interval}"
+            )
+
         self.config_path = config_path
         self.interval = interval
         self.target_instance = target_instance
         self.dry_run = dry_run
-        self.running = False
+        self._stop_event = threading.Event()
 
         # Register signal handlers for graceful shutdown
         for sig in (signal.SIGTERM, signal.SIGINT):
@@ -41,30 +51,15 @@ class ConfigHoleDaemon:
     def _signal_handler(self, signum: int, frame: FrameType | None) -> None:
         """Catch SIGTERM/SIGINT and shut down cleanly."""
         logger.info("Received signal %d, shutting down gracefully...", signum)
-        self.running = False
+        self._stop_event.set()
 
     def _load_instances(self) -> list[dict[str, Any]]:
-        """Load instances from the config file, filtering if needed."""
-        try:
-            config = load_yaml_config(self.config_path)
-            all_instances = merge_global_settings(config)
+        """Load instances from the config file, filtering if needed.
 
-            if not self.target_instance:
-                return all_instances
-
-            filtered = [
-                inst
-                for inst in all_instances
-                if inst.get("name") == self.target_instance
-            ]
-            if not filtered:
-                logger.error("No instance found with name '%s'", self.target_instance)
-                sys.exit(1)
-            return filtered
-
-        except Exception as exc:
-            logger.error("Failed to load configuration: %s", exc)
-            sys.exit(1)
+        Raises ConfigurationError so that a bad reload does not stop a running daemon.
+        """
+        config = load_yaml_config(self.config_path)
+        return filter_instances(merge_global_settings(config), self.target_instance)
 
     def _sync_instances(self) -> None:
         """Run a sync across all target instances."""
@@ -105,17 +100,23 @@ class ConfigHoleDaemon:
             self.dry_run,
         )
 
-        self.running = True
+        # A broken config at startup is fatal. Later reload failures are only logged.
+        try:
+            self._load_instances()
+        except Exception as exc:
+            logger.error("Failed to load configuration: %s", exc)
+            sys.exit(1)
+
         logger.info("Performing initial sync...")
         self._sync_instances()
 
-        while self.running:
+        while True:
             try:
                 logger.info("Sleeping for %d seconds...", self.interval)
-                time.sleep(self.interval)
+                if self._stop_event.wait(self.interval):
+                    break
 
-                if self.running:
-                    self._sync_instances()
+                self._sync_instances()
 
             except KeyboardInterrupt:
                 logger.info("Received keyboard interrupt, shutting down...")
@@ -134,7 +135,9 @@ def get_daemon_config_from_env() -> dict[str, Any]:
 
     return {
         "enabled": env_bool("CONFIGHOLE_DAEMON_MODE"),
-        "interval": int(os.getenv("CONFIGHOLE_DAEMON_INTERVAL", "300")),
+        "interval": int(
+            os.getenv("CONFIGHOLE_DAEMON_INTERVAL", str(DEFAULT_DAEMON_INTERVAL))
+        ),
         "config_path": os.getenv("CONFIGHOLE_CONFIG_PATH"),
         "instance": os.getenv("CONFIGHOLE_INSTANCE"),
         "dry_run": env_bool("CONFIGHOLE_DRY_RUN"),
@@ -156,10 +159,15 @@ def run_daemon_from_env() -> None:
         logger.error("Config path required. Set CONFIGHOLE_CONFIG_PATH")
         sys.exit(1)
 
-    daemon = ConfigHoleDaemon(
-        config_path=config["config_path"],
-        interval=config["interval"],
-        target_instance=config["instance"],
-        dry_run=config["dry_run"],
-    )
+    try:
+        daemon = ConfigHoleDaemon(
+            config_path=config["config_path"],
+            interval=config["interval"],
+            target_instance=config["instance"],
+            dry_run=config["dry_run"],
+        )
+    except ConfigurationError as exc:
+        logger.error("%s", exc)
+        sys.exit(1)
+
     daemon.run()

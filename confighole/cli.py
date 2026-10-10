@@ -12,11 +12,13 @@ import yaml
 
 from confighole.core.daemon import ConfigHoleDaemon, run_daemon_from_env
 from confighole.utils.config import (
+    filter_instances,
     get_global_daemon_settings,
     load_yaml_config,
     merge_global_settings,
 )
 from confighole.utils.constants import DEFAULT_DAEMON_INTERVAL
+from confighole.utils.exceptions import ConfigurationError
 from confighole.utils.tasks import process_instances
 
 
@@ -59,7 +61,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--interval",
         type=int,
-        default=DEFAULT_DAEMON_INTERVAL,
+        default=None,
         help="Daemon sync interval in seconds",
     )
     parser.add_argument(
@@ -69,29 +71,13 @@ def create_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def filter_instances(
-    instances: list[dict[str, Any]],
-    target: str | None = None,
-) -> list[dict[str, Any]]:
-    """Filter to just one instance if a target name is given."""
-    if not target:
-        return instances
-
-    filtered = [inst for inst in instances if inst.get("name") == target]
-    if not filtered:
-        logging.error("No instance found with name %s", target)
-        sys.exit(1)
-
-    return filtered
-
-
 def validate_arguments(args: argparse.Namespace) -> None:
     """Make sure the CLI args make sense together."""
     if args.dry_run and not (args.sync or args.daemon):
         logging.error("--dry-run can only be used with --sync or --daemon")
         sys.exit(1)
 
-    if args.interval != DEFAULT_DAEMON_INTERVAL and not args.daemon:
+    if args.interval is not None and not args.daemon:
         logging.error("--interval can only be used with --daemon")
         sys.exit(1)
 
@@ -114,7 +100,7 @@ def resolve_settings(
         if args.verbose > 0
         else global_settings.get("verbosity", 1),
         "interval": args.interval
-        if args.interval != DEFAULT_DAEMON_INTERVAL
+        if args.interval is not None
         else global_settings.get("daemon_interval", DEFAULT_DAEMON_INTERVAL),
         "dry_run": args.dry_run or global_settings.get("dry_run", False),
         "daemon_mode": args.daemon or global_settings.get("daemon_mode", False),
@@ -133,7 +119,11 @@ def main() -> None:
     args = parser.parse_args()
 
     # Load config and resolve settings
-    config = load_yaml_config(args.config)
+    try:
+        config = load_yaml_config(args.config)
+    except ConfigurationError as exc:
+        logging.error("%s", exc)
+        sys.exit(1)
     global_daemon_settings = get_global_daemon_settings(config)
     settings = resolve_settings(args, global_daemon_settings)
 
@@ -146,7 +136,11 @@ def main() -> None:
 
     # Process instances
     all_instances = merge_global_settings(config)
-    target_instances = filter_instances(all_instances, args.instance)
+    try:
+        target_instances = filter_instances(all_instances, args.instance)
+    except ConfigurationError as exc:
+        logging.error("%s", exc)
+        sys.exit(1)
 
     if not target_instances:
         logging.error("No instances found in configuration")
@@ -155,12 +149,16 @@ def main() -> None:
     operation = get_operation_mode(args)
 
     if operation == "daemon":
-        daemon = ConfigHoleDaemon(
-            config_path=args.config,
-            interval=settings["interval"],
-            target_instance=args.instance,
-            dry_run=settings["dry_run"],
-        )
+        try:
+            daemon = ConfigHoleDaemon(
+                config_path=args.config,
+                interval=settings["interval"],
+                target_instance=args.instance,
+                dry_run=settings["dry_run"],
+            )
+        except ConfigurationError as exc:
+            logging.error("%s", exc)
+            sys.exit(1)
         daemon.run()
         return
 
