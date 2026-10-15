@@ -187,7 +187,6 @@ def _sync_resource(
     diff_func: Any,
     *,
     dry_run: bool = False,
-    post_sync_action: str | None = None,
     manager: PiHoleManager | None = None,
 ) -> dict[str, Any] | None:
     """Shared logic for syncing lists, domains, groups, or clients."""
@@ -217,12 +216,8 @@ def _sync_resource(
         if dry_run:
             logger.info("Would apply %s changes for '%s':", resource_key, name)
             print(yaml.dump(changes, sort_keys=False, default_flow_style=False))
-            if post_sync_action and instance_config.get("update_gravity"):
-                logger.info("Would %s for '%s'", post_sync_action, name)
         else:
             getattr(manager, update_method)(changes)
-            if post_sync_action and instance_config.get("update_gravity"):
-                getattr(manager, post_sync_action)()
 
         return {"name": name, "base_url": base_url, "changes": changes}
 
@@ -233,7 +228,7 @@ def sync_list_config(
     dry_run: bool = False,
     manager: PiHoleManager | None = None,
 ) -> dict[str, Any] | None:
-    """Sync adlists to the Pi-hole. Optionally triggers gravity update."""
+    """Sync adlists to the Pi-hole. Gravity is updated by sync()."""
     return _sync_resource(
         instance_config,
         resource_key="lists",
@@ -241,7 +236,6 @@ def sync_list_config(
         update_method="update_lists",
         diff_func=calculate_lists_diff,
         dry_run=dry_run,
-        post_sync_action="update_gravity",
         manager=manager,
     )
 
@@ -336,6 +330,13 @@ def sync(
                     instance_config, dry_run=dry_run, manager=manager
                 ):
                     results[key] = result.get("changes", {})
+
+            # Gravity locks the gravity database, so it runs after every write.
+            if "lists" in results and instance_config.get("update_gravity"):
+                if dry_run:
+                    logger.info("Would update gravity for '%s'", name)
+                else:
+                    manager.update_gravity()
 
     if results:
         return {
