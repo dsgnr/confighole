@@ -173,6 +173,7 @@ class TestDaemonModeDetection:
     """Tests for daemon mode environment detection."""
 
     @patch.dict(os.environ, {"CONFIGHOLE_DAEMON_MODE": "true"})
+    @patch("sys.argv", ["confighole"])
     @patch("confighole.cli.run_daemon_from_env")
     def test_env_daemon_mode_detected(self, mock_run_daemon):
         """Daemon mode from environment is detected."""
@@ -185,6 +186,18 @@ class TestDaemonModeDetection:
 
         assert exc_info.value.code == 0
         mock_run_daemon.assert_called_once()
+
+    @patch.dict(os.environ, {"CONFIGHOLE_DAEMON_MODE": "true"})
+    @patch("sys.argv", ["confighole", "-c", "/missing/config.yaml", "--diff"])
+    @patch("confighole.cli.run_daemon_from_env")
+    def test_arguments_override_env_daemon_mode(self, mock_run_daemon):
+        """Explicit arguments run the requested command, not the env daemon."""
+        from confighole.cli import main
+
+        with pytest.raises(SystemExit):
+            main()
+
+        mock_run_daemon.assert_not_called()
 
 
 @pytest.mark.unit

@@ -109,8 +109,9 @@ def resolve_settings(
 
 def main() -> None:
     """Entry point for the CLI."""
-    # Check for Docker daemon mode first, before parsing arguments
-    if os.getenv("CONFIGHOLE_DAEMON_MODE", "").lower() == "true":
+    # Environment-driven daemon mode only applies when no arguments are given, so
+    # that running a command inside a daemon container does not start another sync.
+    if len(sys.argv) == 1 and os.getenv("CONFIGHOLE_DAEMON_MODE", "").lower() == "true":
         setup_logging(int(os.getenv("CONFIGHOLE_VERBOSE", "1")))
         run_daemon_from_env()
         return
