@@ -85,6 +85,10 @@ def _items_differ(
                 remote_value if remote_value is not None else True
             ):
                 return True
+        elif field == "comment":
+            # Pi-hole returns "" for an unset comment, so None must match it.
+            if (local_value or "") != (remote_value or ""):
+                return True
         elif local_value != remote_value:
             return True
 

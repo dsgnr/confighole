@@ -334,6 +334,13 @@ class TestListsDiff:
         lists = [SAMPLE_LIST]
         assert calculate_lists_diff(lists, lists) == {}
 
+    def test_unset_comment_matches_empty_remote_comment(self):
+        """A list without a comment does not differ from a remote empty comment."""
+        local = [{"address": "https://example.com/list.txt", "type": "block"}]
+        remote = [{**local[0], "comment": "", "groups": [0], "enabled": True}]
+
+        assert calculate_lists_diff(local, remote) == {}
+
     def test_addition_detected(self):
         """New list in local is detected as addition."""
         local = [SAMPLE_LIST]
